@@ -2623,7 +2623,13 @@ function setTheme(theme) {
 
 // ---- Keyboard Shortcuts ----
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  // Allow typing in inputs/textareas (don't intercept Space, arrows, etc. there)
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+  // v18: dialog overlay should eat keys; only Escape is allowed through
+  const ov = document.getElementById('shortcuts-overlay');
+  if (ov && ov.style.display === 'flex' && e.code !== 'Escape' &&
+      !(e.shiftKey && (e.code === 'Slash' || e.code === 'Minus'))) return;
   // Allow Shift+? for shortcuts overlay — match both layouts:
   //   US: ? → Shift+Slash (= "/" with shiftKey) → code 'Slash'
   //   DE: ? → Shift+ß (= "ß" with shiftKey) → code 'Minus' (keyboard scancode for ß)
@@ -2641,7 +2647,24 @@ document.addEventListener('keydown', e => {
     case 'KeyS': stopReading(); break;
     case 'KeyB': addBookmark(); break;
     case 'KeyT': cycleTheme(); break;
-    case 'KeyF': document.getElementById('text-input')?.focus(); break;
+    case 'KeyF': {
+      // v18: text-input is inside editor-view; if startReading() hid the editor
+      // (display:none ancestor), focus() silently fails. Make sure to show the
+      // editor first, then focus the input.
+      const ev = document.getElementById('editor-view');
+      if (ev && ev.classList.contains('hidden') && typeof showEditor === 'function') {
+        showEditor();
+      }
+      const doFocus = () => {
+        const ta = document.getElementById('text-input');
+        if (!ta) return;
+        try { ta.focus({preventScroll:true}); } catch(_) { ta.focus(); }
+        try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch(_) {}
+      };
+      doFocus();
+      requestAnimationFrame(doFocus);
+      break;
+    }
     case 'Home': e.preventDefault(); jumpToSentence(0); break;
     case 'End': e.preventDefault(); jumpToSentence(sentences.length - 1); break;
   }
@@ -2698,21 +2721,39 @@ init();
 
 // v17: mobile touch-swipe on reader-view → skip forward/backward
 (function(){
-  let startX = 0, startY = 0, startT = 0, tracking = false, _swipeLock = false;
+  let startX = 0, startY = 0, startT = 0, tracking = false, _swipeLock = false, _swipeMulti = false, _touchCount = 0;
   const SWIPE_MIN = 50;
   const SWIPE_MAX_TIME = 800;
   const SWIPE_VERT_LIMIT = 0.7;
 
   function onStart(e) {
     if (_swipeLock) return;
-    if (e.touches && e.touches.length !== 1) return;
+    // v18: count active touches; any time more than 1 active → reject swipe.
+    if (e.touches && e.touches.length) {
+      // Increment to current touch count (clipped to max)
+      _touchCount = Math.max(_touchCount, e.touches.length);
+      if (_touchCount > 1) { _swipeMulti = true; tracking = false; return; }
+    }
+    if (_swipeMulti) return;
     const t = (e.touches && e.touches[0]) || e;
     startX = t.clientX;
     startY = t.clientY;
     startT = Date.now();
     tracking = true;
   }
+  function onMove(e) {
+    // If a second finger lands mid-swipe, the touchlist grows; cancel tracking
+    if (e.touches && e.touches.length > 1) {
+      _swipeMulti = true; tracking = false;
+    }
+  }
   function onEnd(e) {
+    // recompute touchCount: if any remains, leave at 1; else reset on timeout
+    if (e.touches) _touchCount = e.touches.length;
+    else if (_touchCount > 0) _touchCount--;
+    if (_touchCount <= 0) {
+      setTimeout(() => { _swipeMulti = false; _touchCount = 0; }, 50);
+    }
     if (!tracking) return;
     tracking = false;
     if (_swipeLock) return;
@@ -2729,6 +2770,9 @@ init();
     if (dx < 0) skipSent(1);
     else        skipSent(-1);
     try { if (navigator.vibrate) navigator.vibrate(15); } catch(_) {}
+  }
+  function onCancel() {
+    tracking = false; _touchCount = 0; _swipeMulti = false;
   }
   function onEnd(e) {
     if (!tracking) return;
@@ -2748,8 +2792,9 @@ init();
   const reader = document.getElementById('reader-view');
   if (reader) {
     reader.addEventListener('touchstart', onStart, {passive:true});
+    reader.addEventListener('touchmove',  onMove,  {passive:true});
     reader.addEventListener('touchend',   onEnd,   {passive:true});
-    reader.addEventListener('touchcancel',() => { tracking = false; }, {passive:true});
+    reader.addEventListener('touchcancel', onCancel, {passive:true});
   }
 })();
 </script>
