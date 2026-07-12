@@ -1226,6 +1226,22 @@ function _safeParse(s, fb) {
   try { const v = JSON.parse(s ?? fb); return v != null ? v : JSON.parse(fb); }
   catch (_) { try { return JSON.parse(fb); } catch (_) { return []; } }
 }
+// v15: wrap localStorage writes so a quota-exhausted browser doesn't break
+// bookmark/theme/font/toggle persistence; silently degrades (returns false).
+function _safeSet(key, val) {
+  try { localStorage.setItem(key, val); return true; }
+  catch (e) {
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      // Only show toast once per key per session
+      if (!_safeSet._toasted) _safeSet._toasted = {};
+      if (!_safeSet._toasted[key]) {
+        _safeSet._toasted[key] = true;
+        try { showToast('Speicher voll — Einstellung wird nicht gespeichert', 'info'); } catch(_) {}
+      }
+    }
+    return false;
+  }
+}
 let library = _safeParse(localStorage.getItem('rp_library'), '[]');
 let bookmarks = _safeParse(localStorage.getItem('rp_bookmarks'), '[]');
 let currentTitle = '';
@@ -1483,7 +1499,7 @@ async function init() {
   // Restore engine from storage and apply UI
   let savedEngine = localStorage.getItem('rp_engine') || 'piper';
   // Migrate: any pre-Piper users get bumped to Piper (better default)
-  if (!localStorage.getItem('rp_engine')) localStorage.setItem('rp_engine', 'piper');
+  if (!localStorage.getItem('rp_engine')) _safeSet('rp_engine', 'piper');
   if (savedEngine === 'browser' || savedEngine === 'piper') {
     // Reset state and UI to match saved choice
     document.querySelectorAll('.engine-tab').forEach(t => t.classList.toggle('active', t.dataset.engine === savedEngine));
@@ -1590,7 +1606,7 @@ function renderPiperVoiceCards() {
 
 function selectPiperVoice(id) {
   selectedPiperVoice = id;
-  localStorage.setItem('rp_piper_voice', id);
+  _safeSet('rp_piper_voice', id);
   document.querySelectorAll('#piper-voices .voice-preset').forEach(el => {
     el.classList.toggle('active', el.dataset.voiceId === id);
   });
@@ -1631,7 +1647,7 @@ function setEngine(engine) {
   if (engine === 'browser') {
     document.querySelectorAll('#piper-voices .voice-preset').forEach(el => el.classList.remove('active'));
   }
-  localStorage.setItem('rp_engine', engine);
+  _safeSet('rp_engine', engine);
   showToast(engine === 'piper' ? '🧠 Server-Stimme aktiv (Piper · CPU)' : '🌐 Browser-Stimme aktiv', 'info');
 }
 
@@ -1686,7 +1702,7 @@ function selectVoicePreset(idx) {
     el.classList.toggle('active', i === idx);
   });
   const preset = VOICE_PRESETS[idx];
-  localStorage.setItem('rp_browser_preset', String(idx));
+  _safeSet('rp_browser_preset', String(idx));
 
   // Try to match a browser voice
   const matched = matchPresetToVoice(preset);
@@ -1724,14 +1740,14 @@ function matchPresetToVoice(preset) {
 
 // ---- Settings ----
 function updateRateLabel() {
-  const val = parseFloat(document.getElementById('rate-slider').value);
+  const val = Math.max(0.5, Math.min(2.0, parseFloat(document.getElementById('rate-slider').value) || 1.0));
   document.getElementById('rate-value').textContent = val.toFixed(1) + '×';
   // v9: sync the active speed-preset chip too (was only in setRate() — slider drag had no feedback)
   document.querySelectorAll('.speed-preset').forEach(b => {
     b.classList.toggle('active', parseFloat(b.textContent) === val);
   });
   // Also persist so next page load remembers the rate
-  localStorage.setItem('rp_rate', document.getElementById('rate-slider').value);
+  _safeSet('rp_rate', document.getElementById('rate-slider').value);
 }
 function updatePitchLabel() {
   document.getElementById('pitch-value').textContent = parseFloat(document.getElementById('pitch-slider').value).toFixed(1);
@@ -1978,7 +1994,7 @@ function addBookmark() {
     setTimeout(() => btn?.classList.remove('bm-flash'), 800);
   }
   renderBookmarks();
-  localStorage.setItem('rp_bookmarks', JSON.stringify(bookmarks));
+  _safeSet('rp_bookmarks', JSON.stringify(bookmarks));
 }
 
 function renderBookmarks() {
@@ -2307,7 +2323,7 @@ function saveToLibrary() {
   if (existing >= 0) library[existing] = entry;
   else library.unshift(entry);
 
-  localStorage.setItem('rp_library', JSON.stringify(library));
+  _safeSet('rp_library', JSON.stringify(library));
   renderLibrary();
   showToast('In Bibliothek gespeichert', 'success');
 }
@@ -2360,7 +2376,7 @@ function loadLibraryItem(id) {
 
 function deleteLibraryItem(id) {
   library = library.filter(e => e.id !== id);
-  localStorage.setItem('rp_library', JSON.stringify(library));
+  _safeSet('rp_library', JSON.stringify(library));
   renderLibrary();
   showToast('Gelöscht', 'success');
 }
@@ -2523,7 +2539,7 @@ function escapeHtml(s) {
 function setRate(val) {
   document.getElementById('rate-slider').value = val;
   updateRateLabel();
-  localStorage.setItem('rp_rate', String(val));
+  _safeSet('rp_rate', String(val));
   document.querySelectorAll('.speed-preset').forEach(b => {
     b.classList.toggle('active', parseFloat(b.textContent) === val);
   });
@@ -2533,10 +2549,10 @@ function setRate(val) {
 function setTheme(theme) {
   if (theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('rp_theme', theme);
+    _safeSet('rp_theme', theme);
   } else {
     document.documentElement.removeAttribute('data-theme');
-    localStorage.setItem('rp_theme', '');
+    _safeSet('rp_theme', '');
   }
   document.querySelectorAll('.theme-toggle-btn').forEach(b => {
     b.style.borderColor = b.dataset.themeVal === theme ? 'var(--accent)' : 'var(--border2)';
