@@ -1,0 +1,6 @@
+# Voices are large — re-download via setup.sh
+piper-voices/
+uploads/
+*.log
+__pycache__/
+*.pyc

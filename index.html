@@ -2374,6 +2374,10 @@ async function downloadAudio() {
   if (currentEngine === 'piper') {
     const fullText = sentences.join(' ');
     if (!fullText) { showToast('Keine Sätze', 'error'); return; }
+    // v14: warn the user when text exceeds server TTS cap (downloads would be silent).
+    if (fullText.length > 1500) {
+      showToast(`Hinweis: nur erste 1500 Zeichen werden heruntergeladen (Text hat ${fullText.length})`, 'info');
+    }
     showToast('🧠 Piper: rendere Audio…', 'info');
     try {
       const rate = parseFloat(document.getElementById('rate-slider').value) || 1.0;
@@ -2441,7 +2445,21 @@ async function downloadAudio() {
       a.click();
       URL.revokeObjectURL(url);
       stream.getTracks().forEach(t => t.stop());
+      // v14: restore global state — without these the next regular Play/Pause
+      // would see isPlaying=true while there's no utterance and behave oddly.
+      isPlaying = false;
+      updatePlayIcon();
       showToast('Audio heruntergeladen!', 'success');
+    };
+    // v14: surface recorder errors (e.g. user clicks "Stop sharing" mid-recording)
+    // so isPlaying/stream/UI don't get stuck in an inconsistent state.
+    recorder.onerror = (e) => {
+      try { recorder.stop(); } catch(_) {}
+      try { stream.getTracks().forEach(t => t.stop()); } catch(_) {}
+      try { speechSynthesis.cancel(); } catch(_) {}
+      isPlaying = false;
+      updatePlayIcon();
+      showToast('Aufnahme fehlgeschlagen: ' + (e?.error?.message || 'unbekannt'), 'error');
     };
 
     // Start recording and speaking
