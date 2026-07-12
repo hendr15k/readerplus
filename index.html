@@ -1607,6 +1607,9 @@ function renderPiperVoiceCards() {
 function selectPiperVoice(id) {
   selectedPiperVoice = id;
   _safeSet('rp_piper_voice', id);
+  // v16: invalidate cached audio for the old voice. Old entries will be pruned
+  // by LRU; clearing immediately frees object URLs.
+  if (_piperCache) _piperCache.clear();
   document.querySelectorAll('#piper-voices .voice-preset').forEach(el => {
     el.classList.toggle('active', el.dataset.voiceId === id);
   });
@@ -2083,6 +2086,60 @@ function speakSentenceBrowser(idx) {
 
 let piperActive = null; // sentence idx currently being fetched/playing
 
+// v16: simple in-memory cache for Piper blob URLs keyed by (voice, lengthScale, text).
+// Saves repeated rendering of identical sentences (e.g. when user seeks back).
+let _piperCache = new Map();   // cacheKey -> { url, objectUrl, ts }
+const _PIPER_CACHE_MAX = 32;   // keep last N entries; LRU-ish
+
+function _piperCacheKey(voice, lengthScale, text) {
+  // short hash so we don't blow up the Map key with 5KB strings
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return voice + '|' + lengthScale.toFixed(3) + '|' + h + '|' + text.length;
+}
+
+function _piperCachePrune() {
+  while (_piperCache.size > _PIPER_CACHE_MAX) {
+    const oldestKey = _piperCache.keys().next().value;
+    const entry = _piperCache.get(oldestKey);
+    if (entry && entry.objectUrl) try { URL.revokeObjectURL(entry.objectUrl); } catch(_) {}
+    _piperCache.delete(oldestKey);
+  }
+}
+
+async function _piperFetch(text, voice, lengthScale) {
+  const key = _piperCacheKey(voice, lengthScale, text);
+  const cached = _piperCache.get(key);
+  if (cached) {
+    // refresh recency
+    _piperCache.delete(key); _piperCache.set(key, cached);
+    return cached.url;
+  }
+  const r = await fetch('/api/tts', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text, voice, length_scale: lengthScale}),
+  });
+  if (!r.ok) throw new Error('TTS HTTP ' + r.status);
+  const buf = await r.arrayBuffer();
+  const blob = new Blob([buf], {type: 'audio/wav'});
+  const objectUrl = URL.createObjectURL(blob);
+  const url = objectUrl;
+  _piperCache.set(key, {url, objectUrl, ts: Date.now()});
+  _piperCachePrune();
+  return url;
+}
+
+// v16: prefetch the next sentence while the current is playing.
+// Sentences vary in length so we cache + pre-render one ahead of time.
+async function _piperPrefetch(idx, voice, lengthScale) {
+  if (idx < 0 || idx >= sentences.length) return;
+  const text = sentences[idx];
+  if (!text || !text.trim()) return;
+  if (_piperCache.has(_piperCacheKey(voice, lengthScale, text))) return;
+  try { await _piperFetch(text, voice, lengthScale); } catch (e) { /* swallow */ }
+}
+
 function speakSentencePiper(idx) {
   const audio = document.getElementById('piper-audio');
   const text = sentences[idx];
@@ -2095,48 +2152,46 @@ function speakSentencePiper(idx) {
   // So we invert: rate=2.0 -> length_scale=0.5, rate=0.5 -> length_scale=2.0
   const rate = parseFloat(document.getElementById('rate-slider').value) || 1.0;
   const lengthScale = Math.max(0.5, Math.min(2.0, 1.0 / rate));
+  const _voice = selectedPiperVoice;
   currentSentIdx = idx;
   piperActive = idx;
   highlightSentence(idx);
   updateProgress();
-  const selected = piperVoices.find(v => v.id === selectedPiperVoice) || {id: selectedPiperVoice, name: 'Piper'};
+  const selected = piperVoices.find(v => v.id === _voice) || {id: _voice, name: 'Piper'};
   updateNowPlaying({name: selected.name + ' (Piper · CPU)', lang: selected.lang || ''});
   // Stop previous audio
   audio.pause();
   showTtsLoading();
-  // Fetch TTS audio
-  fetch('/api/tts', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({text, voice: selectedPiperVoice, length_scale: lengthScale}),
-  })
-    .then(r => {
-      if (!r.ok) throw new Error('TTS HTTP ' + r.status);
-      return r.arrayBuffer();
-    })
-    .then(buf => {
+  // v16: get blob URL (cached if available) then play; prefetch next sentence in parallel.
+  _piperFetch(text, _voice, lengthScale)
+    .then(url => {
       hideTtsLoading();
-      if (piperActive !== idx) return; // user navigated away while we were loading
-      const blob = new Blob([buf], {type: 'audio/wav'});
+      if (piperActive !== idx) {
+        // user navigated away while we were loading; don't bind this URL to <audio>
+        return;
+      }
       // v10: revoke the previous object URL to free the blob memory; otherwise
-      // every sentence change would leak one until page reload
-      if (audio._lastObjUrl) { try { URL.revokeObjectURL(audio._lastObjUrl); } catch(e){} }
-      const url = URL.createObjectURL(blob);
+      // every sentence change would leak one until page reload. The cache
+      // retains its own copy internally so a re-visit will hit memory.
+      if (audio._lastObjUrl && audio._lastObjUrl !== url) {
+        try { URL.revokeObjectURL(audio._lastObjUrl); } catch(e){}
+      }
       audio._lastObjUrl = url;
       audio.src = url;
       isPlaying = true; isPaused = false;
       updatePlayIcon();
       return audio.play();
     })
-    .then(() => {
-      // started fine; nothing to do
-    })
+    .then(() => { /* playing */ })
     .catch(e => {
       hideTtsLoading();
       console.warn('Piper TTS error:', e);
       showToast('⚠ TTS-Fehler: ' + e.message, 'error');
       if (isPlaying && piperActive === idx) speakSentence(idx + 1);
     });
+
+  // v16: prefetch the next sentence in the background
+  _piperPrefetch(idx + 1, _voice, lengthScale);
 
   audio.onended = () => {
     if (piperActive === idx && isPlaying && !isPaused) {
@@ -2540,6 +2595,8 @@ function setRate(val) {
   document.getElementById('rate-slider').value = val;
   updateRateLabel();
   _safeSet('rp_rate', String(val));
+  // v16: rate change invalidates Piper cache (length_scale changed → different audio)
+  if (_piperCache) _piperCache.clear();
   document.querySelectorAll('.speed-preset').forEach(b => {
     b.classList.toggle('active', parseFloat(b.textContent) === val);
   });
