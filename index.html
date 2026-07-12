@@ -328,6 +328,16 @@ input, textarea{ font-family:inherit; outline:none; }
   border-radius:4px; padding:3px 5px; margin:0 1px; display:inline;
 }
 .reader-text .sentence:hover{ background:rgba(108,92,231,.08); }
+/* v20: visual feedback for long-press bookmark (prefix ◆) */
+.reader-text .sentence.bookmarked{
+  position:relative;
+}
+.reader-text .sentence.bookmarked::before{
+  content:'◆'; color:var(--accent);
+  position:absolute; left:-14px; top:0; font-size:.85em;
+  animation:bmPop .4s ease-out;
+}
+@keyframes bmPop{ from{ transform:scale(.4); opacity:0; } to{ transform:scale(1); opacity:1; } }
 .reader-text .sentence.active{
   background:var(--accent-soft); color:var(--accent);
   box-shadow:inset 0 0 0 1px var(--accent);
@@ -1987,9 +1997,63 @@ function renderReader() {
     span.dataset.idx = idx;
     span.textContent = sent + ' ';
     span.onclick = () => jumpToSentence(idx);
+    // v20: long-press (touchstart→touchend within 600ms, no move >10px) toggles bookmark
+    attachLongPress(span, idx);
     container.appendChild(span);
   });
   updateProgress();
+}
+
+// v20: long-press detector on a single sentence element.
+// Returns immediately if motion >10px (then it's a swipe, not a press).
+// Uses data-* attributes on the element so we don't rely on closure state.
+function attachLongPress(el, idx) {
+  const LIMIT = 600; // ms
+  const MOVE_TOLERANCE = 10; // px
+  function onStart(e) {
+    if (e.touches && e.touches.length !== 1) return;
+    const t = (e.touches && e.touches[0]) || e;
+    el.dataset.lp_x = String(t.clientX);
+    el.dataset.lp_y = String(t.clientY);
+    el.dataset.lp_idx = String(idx);
+    el.dataset.lp_fired = '0';
+    const tid = setTimeout(() => {
+      if (el.dataset.lp_fired !== '0') return;
+      el.dataset.lp_fired = '1';
+      try { if (navigator.vibrate) navigator.vibrate(20); } catch(_) {}
+      jumpToSentence(Number(el.dataset.lp_idx));
+      addBookmark();
+      showToast('📑 Lesezeichen bei Satz ' + (Number(el.dataset.lp_idx) + 1), 'success');
+    }, LIMIT);
+    el.dataset.lp_tid = String(tid);
+  }
+  function onMove(e) {
+    if (el.dataset.lp_fired === '1' || !el.dataset.lp_tid) return;
+    const t = (e.touches && e.touches[0]) || e;
+    const sx = parseFloat(el.dataset.lp_x);
+    const sy = parseFloat(el.dataset.lp_y);
+    if (Math.abs(t.clientX - sx) > MOVE_TOLERANCE || Math.abs(t.clientY - sy) > MOVE_TOLERANCE) {
+      clearTimeout(Number(el.dataset.lp_tid));
+      delete el.dataset.lp_tid;
+    }
+  }
+  function onEnd(e) {
+    const tid = el.dataset.lp_tid;
+    if (tid) clearTimeout(Number(tid));
+    el.dataset.lp_fired = '0';
+    delete el.dataset.lp_tid;
+  }
+  el.addEventListener('touchstart', onStart, {passive:true});
+  el.addEventListener('touchmove',  onMove,  {passive:true});
+  el.addEventListener('touchend',   onEnd,  {passive:true});
+  el.addEventListener('touchcancel',onEnd,  {passive:true});
+  // Also support right-click / context menu on desktop
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    jumpToSentence(idx);
+    addBookmark();
+    showToast('📑 Lesezeichen bei Satz ' + (idx + 1), 'success');
+  });
 }
 
 // ---- Bookmarks ----
@@ -2006,6 +2070,8 @@ function addBookmark() {
     setTimeout(() => btn?.classList.remove('bm-flash'), 800);
   }
   renderBookmarks();
+  // v20: also refresh the .bookmarked class on sentence spans
+  updateBookmarkActive();
   _safeSet('rp_bookmarks', JSON.stringify(bookmarks));
 }
 
@@ -2043,6 +2109,12 @@ function updateBookmarkActive() {
   for (const el of __bmChipEls) {
     el.classList.toggle('active', Number(el.dataset.bmIdx) === currentSentIdx);
   }
+  // v20: also tag sentence spans with .bookmarked class so the ◆ prefix shows
+  // next to bookmarked sentences in the reader.
+  const bms = new Set(bookmarks);
+  document.querySelectorAll('#reader-text .sentence').forEach(el => {
+    el.classList.toggle('bookmarked', bms.has(Number(el.dataset.idx)));
+  });
 }
 
 // ---- Speech Synthesis ----
