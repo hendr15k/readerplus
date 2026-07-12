@@ -1162,6 +1162,14 @@ input[type=range]::-moz-range-thumb{
             <input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1" oninput="updateVolLabel()">
             <div class="range-label"><span class="end-labels"><span>Stumm</span><span style="color:var(--text3)">↔</span><span>Voll</span></span><span class="value" id="vol-value">100%</span></div>
           </div>
+          <div class="setting-card v22-prefetch">
+            <label>Vorab-Render (Piper)</label>
+            <div class="speed-presets">
+              <button class="speed-preset" data-prefetch="0" onclick="setPrefetchDepth(0)">Aus</button>
+              <button class="speed-preset active" data-prefetch="1" onclick="setPrefetchDepth(1)">1</button>
+              <button class="speed-preset" data-prefetch="3" onclick="setPrefetchDepth(3)">3</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1598,6 +1606,9 @@ async function init() {
   // v21: render AA search history dropdown (under the search input)
   renderAaHistory();
 
+  // v22: reflect saved prefetch depth
+  renderPrefetchUI();
+
   // Restore previously-selected Piper voice from storage BEFORE rendering
   // (so the active class lands on the right card on first paint)
   const savedPiperVoice = localStorage.getItem('rp_piper_voice');
@@ -1745,11 +1756,15 @@ function setEngine(engine) {
   if (browserSettings) {
     browserSettings.querySelectorAll('.setting-card').forEach((card, i) => {
       if (engine === 'piper') {
+        // Hide voice(0) and pitch(2) (browser-only); show rate(1), volume(3), prefetch(4)
         card.style.display = (i === 0 || i === 2) ? 'none' : '';
       } else {
         card.style.display = '';
       }
     });
+    // v22: prefetch depth applies only to Piper engine, so hide on browser.
+    const pCard = browserSettings.querySelector('.v22-prefetch');
+    if (pCard) pCard.style.display = (engine === 'piper') ? '' : 'none';
   }
   // When switching to piper, restore the active class on the selected piper
   // voice card (was rendered correctly on init but loses visual focus otherwise)
@@ -2306,6 +2321,15 @@ async function _piperFetch(text, voice, lengthScale) {
   return url;
 }
 
+// v22: prefetch depth (number of upcoming sentences to render ahead of time).
+// 0 = disabled, 1 = next sentence only (default, low CPU), 3 = smoother playback
+// on long sentences at the cost of more CPU/bandwidth. User-configurable via
+// `_safeSet('rp_prefetch_depth', String(n))`.
+let _prefetchDepth = (() => {
+  const v = parseInt(localStorage.getItem('rp_prefetch_depth'), 10);
+  return [0, 1, 3].includes(v) ? v : 1;
+})();
+
 // v16: prefetch the next sentence while the current is playing.
 // Sentences vary in length so we cache + pre-render one ahead of time.
 async function _piperPrefetch(idx, voice, lengthScale) {
@@ -2314,6 +2338,38 @@ async function _piperPrefetch(idx, voice, lengthScale) {
   if (!text || !text.trim()) return;
   if (_piperCache.has(_piperCacheKey(voice, lengthScale, text))) return;
   try { await _piperFetch(text, voice, lengthScale); } catch (e) { /* swallow */ }
+}
+
+// v22: prefetch N upcoming sentences in parallel (default depth = 1).
+async function _piperPrefetchAhead(fromIdx, voice, lengthScale) {
+  if (!_prefetchDepth) return;
+  const tasks = [];
+  for (let i = 1; i <= _prefetchDepth; i++) {
+    const idx = fromIdx + i;
+    if (idx < 0 || idx >= sentences.length) continue;
+    tasks.push(_piperPrefetch(idx, voice, lengthScale));
+  }
+  // Fire in parallel but don't block caller.
+  await Promise.allSettled(tasks);
+}
+
+function setPrefetchDepth(n) {
+  if (![0, 1, 3].includes(n)) return;
+  _prefetchDepth = n;
+  _safeSet('rp_prefetch_depth', String(n));
+  const lbl = n === 0 ? 'aus' : (n === 1 ? '1 Satz' : `${n} Sätze`);
+  showToast(`⏩ Vorab-Render: ${lbl}`, 'info');
+  // Update active class on the chip buttons (without re-rendering)
+  document.querySelectorAll('.v22-prefetch [data-prefetch]').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.prefetch) === n);
+  });
+}
+
+// v22: reflect the saved prefetch depth in the UI on init
+function renderPrefetchUI() {
+  document.querySelectorAll('.v22-prefetch [data-prefetch]').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.prefetch) === _prefetchDepth);
+  });
 }
 
 function speakSentencePiper(idx) {
@@ -2366,8 +2422,8 @@ function speakSentencePiper(idx) {
       if (isPlaying && piperActive === idx) speakSentence(idx + 1);
     });
 
-  // v16: prefetch the next sentence in the background
-  _piperPrefetch(idx + 1, _voice, lengthScale);
+  // v16: prefetch the next sentence(s) in the background (depth configurable)
+  _piperPrefetchAhead(idx, _voice, lengthScale);
 
   audio.onended = () => {
     if (piperActive === idx && isPlaying && !isPaused) {
