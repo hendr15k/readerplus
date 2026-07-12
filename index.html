@@ -1,0 +1,2600 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReaderPlus — TTS Web Reader</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
+<!-- pdf.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+:root{
+  --bg:#0d0d12; --bg2:#15151c; --bg3:#1c1c26; --card:#1a1a24;
+  --border:#2a2a38; --border2:#33334a;
+  --text:#e8e8f0; --text2:#9999b0; --text3:#666680;
+  --accent:#6c5ce7; --accent2:#a29bfe; --accent3:#4834d4;
+  --accent-soft:rgba(108,92,231,.12); --hover:rgba(108,92,231,.06);
+  --green:#00cec9; --red:#e74c3c; --orange:#fdcb6e;
+  --radius:12px; --radius-sm:8px;
+  --glass:rgba(21,21,28,.72);
+  --shadow-soft:0 2px 12px rgba(0,0,0,.08);
+  --shadow-med:0 4px 24px rgba(0,0,0,.2);
+  --shadow-high:0 12px 36px rgba(0,0,0,.32);
+  --transition-fast:.12s ease;
+  --transition:.18s ease;
+}
+:root[data-theme="sepia"]{
+  --bg:#1a1510; --bg2:#241d15; --bg3:#2a2018; --card:#271e15;
+  --border:#3d3220; --border2:#4a3c28;
+  --text:#f0e0c8; --text2:#c4a878; --text3:#8a7958;
+  --accent:#c8956a; --accent2:#e0b888; --accent3:#a07550;
+  --accent-soft:rgba(200,149,106,.12); --hover:rgba(200,149,106,.06);
+  --green:#7ec8a0; --red:#e0785a; --orange:#f0a868;
+  --glass:rgba(36,29,21,.75);
+}
+:root[data-theme="light"]{
+  --bg:#f4f4f8; --bg2:#fff; --bg3:#eceef5; --card:#fff;
+  --border:#dde0ea; --border2:#c8ccd8;
+  --text:#1a1a2e; --text2:#6a6b80; --text3:#999;
+  --accent:#6c5ce7; --accent2:#8a7ff5; --accent3:#5a4cf0;
+  --accent-soft:rgba(108,92,231,.08); --hover:rgba(108,92,231,.04);
+  --green:#00b8a9; --red:#e74c3c; --orange:#f0a030;
+  --glass:rgba(255,255,255,.82);
+  --shadow-soft:0 2px 8px rgba(0,0,0,.06);
+  --shadow-med:0 4px 20px rgba(0,0,0,.1);
+  --shadow-high:0 12px 28px rgba(0,0,0,.15);
+}
+html{ font-size:15px; }
+/* Smooth page load animation */
+.app{ animation:appIn .45s ease-out; }
+@keyframes appIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--text);
+  overflow:hidden;
+  height:100vh; min-height:100dvh;
+  background-image:radial-gradient(ellipse at top right, rgba(108,92,231,.08) 0%, transparent 60%),
+                     radial-gradient(ellipse at bottom left, rgba(0,206,201,.05) 0%, transparent 60%);
+}
+/* Slow breathing pulse on the body background */
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(circle at 30% 20%, rgba(108,92,231,.06) 0%, transparent 50%),
+             radial-gradient(circle at 70% 80%, rgba(0,206,201,.04) 0%, transparent 50%);
+  animation:bgPulse 15s ease-in-out infinite alternate;
+}
+@keyframes bgPulse{
+  0%{ opacity:.6; transform:scale(1); }
+  100%{ opacity:1; transform:scale(1.08); }
+}
+/* Make sure app sits above the pulsing bg */
+.app,.mobile-toggle,.toast,.aa-modal-backdrop{ position:relative; z-index:1; }
+.aa-modal-backdrop{ z-index:200; }
+button{ font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input, textarea{ font-family:inherit; outline:none; }
+::-webkit-scrollbar{ width:8px; } ::-webkit-scrollbar-track{ background:var(--bg2); }
+::-webkit-scrollbar-thumb{ background:var(--border2); border-radius:4px; }
+::-webkit-scrollbar-thumb:hover{ background:var(--accent3); }
+/* Firefox */
+*{ scrollbar-width:thin; scrollbar-color:var(--border2) var(--bg2); }
+
+/* ===== Layout ===== */
+.app{ display:flex; height:100vh; }
+
+/*--- Sidebar ---*/
+.sidebar{
+  width:280px; min-width:280px; background:var(--bg2);
+  border-right:1px solid var(--border); display:flex; flex-direction:column;
+  transition:transform .25s ease;
+  box-shadow:1px 0 12px rgba(0,0,0,.25);
+}
+.sidebar-header{
+  padding:20px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:10px;
+  background:linear-gradient(135deg, rgba(108,92,231,.08) 0%, transparent 100%);
+}
+.logo{
+  font-size:1.4rem; font-weight:700; letter-spacing:-0.5px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  background-clip:text; transition:transform .2s; position:relative;
+  text-shadow:0 0 12px rgba(108,92,231,.4);
+}
+.logo::before{
+  content:""; position:absolute; inset:-4px; border-radius:8px;
+  background:radial-gradient(ellipse at center, rgba(108,92,231,.18), transparent 70%);
+  opacity:0; transition:opacity .3s; pointer-events:none; z-index:-1;
+}
+.sidebar-header:hover .logo{ transform:scale(1.05); }
+.sidebar-header:hover .logo::before{ opacity:1; }
+.sidebar-nav{ padding:12px; display:flex; flex-direction:column; gap:4px; flex:0 0 auto; }
+.nav-item{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; border-radius:var(--radius-sm);
+  font-size:.85rem; font-weight:500; color:var(--text2);
+  transition:all .15s; text-align:left; position:relative;
+}
+.nav-item::before{
+  content:''; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:3px; height:0; background:linear-gradient(180deg,var(--accent),var(--accent2));
+  border-radius:0 3px 3px 0; transition:height .2s ease;
+}
+.nav-item:hover{ background:var(--bg3); color:var(--text); }
+.nav-item:hover::before{ height:50%; }
+.nav-item.active{ background:var(--accent3); color:#fff; }
+.nav-item.active::before{ height:80%; }
+.nav-item svg{ width:18px; height:18px; flex-shrink:0; }
+
+.library-section{ flex:1; overflow-y:auto; padding:8px 12px 12px; }
+.library-label{
+  font-size:.7rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:1.5px; color:var(--accent2); margin:14px 4px 10px;
+  display:flex; align-items:center; gap:6px;
+}
+.library-label::after{
+  content:''; flex:1; height:1px;
+  background:linear-gradient(90deg, var(--border2), transparent);
+}
+.library-item{
+  display:flex; align-items:center; gap:8px;
+  padding:10px 12px; border-radius:var(--radius-sm);
+  background:var(--card); border:1px solid var(--border);
+  margin-bottom:6px; cursor:pointer; transition:all .15s;
+  position:relative; overflow:hidden;
+}
+.library-item::before{
+  content:""; position:absolute; left:0; top:8px; bottom:8px; width:3px;
+  background:linear-gradient(180deg,var(--accent),var(--accent2));
+  border-radius:3px; transform:scaleY(0); transition:transform .25s ease;
+}
+.library-item:hover{ border-color:var(--accent); transform:translateX(2px); }
+.library-item.active{
+  border-color:var(--accent); background:var(--accent-soft);
+  box-shadow:0 2px 8px rgba(108,92,231,.15);
+}
+.library-item.active::before{ transform:scaleY(1); }
+.library-item .li-icon{ font-size:1.1rem; flex-shrink:0; }
+.library-item .li-info{ flex:1; min-width:0; }
+.library-item .li-title{
+  font-size:.82rem; font-weight:500; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.library-item .li-meta{ font-size:.68rem; color:var(--text3); margin-top:2px; }
+.library-item .li-delete{
+  opacity:0; transition:opacity .15s; font-size:.9rem;
+  color:var(--text3); padding:4px 6px; border-radius:4px;
+  -webkit-tap-highlight-color:transparent;
+}
+.library-item:hover .li-delete,
+.library-item:focus-within .li-delete{ opacity:1; }
+.library-item .li-delete:hover,
+.library-item .li-delete:focus,
+.library-item .li-delete:active{ color:var(--red); opacity:1; }
+/* Always show on touch devices so items can be deleted */
+@media (hover:none){ .library-item .li-delete{ opacity:.65; } }
+.library-empty{
+  text-align:center; padding:40px 14px; color:var(--text3);
+  font-size:.78rem; line-height:1.7;
+  background:var(--card); border:1px dashed var(--border);
+  border-radius:var(--radius); margin:4px;
+  animation:emptyFadeIn .5s ease-out;
+}
+@keyframes emptyFadeIn{
+  from{ opacity:0; transform:translateY(-4px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+.library-empty .lib-icon{
+  font-size:2.5rem; opacity:.5; margin-bottom:10px; display:block;
+  animation:floatY 3s ease-in-out infinite;
+}
+@keyframes floatY{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-4px); } }
+
+.sidebar-footer{
+  padding:12px 16px; border-top:1px solid var(--border);
+  font-size:.7rem; color:var(--text3); text-align:center;
+}
+
+/*--- Main ---*/
+.main{ flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.main-header{
+  padding:18px 28px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  background:linear-gradient(180deg, var(--bg2) 0%, transparent 100%);
+  position:relative;
+}
+/* v12: title block must be allowed to shrink so the action buttons (right
+   side) don't get pushed off-screen on narrow mobile viewports — without
+   `min-width:0` the title's content width is taken as its min-width and
+   flex layout overflows past the right padding. */
+.main-header > div:first-child{
+  min-width:0; flex:1 1 auto;
+}
+.main-header::after{
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(108,92,231,.3), transparent);
+}
+.main-header h1{
+  font-size:1.2rem; font-weight:700; letter-spacing:-.3px;
+  animation:titleSlide .4s ease;
+}
+.main-header .subtitle{ font-size:.78rem; color:var(--text3);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  max-width:420px; }
+@keyframes titleSlide{
+  from{ opacity:0; transform:translateX(-6px); }
+  to{ opacity:1; transform:translateX(0); }
+}
+.header-actions{ display:flex; gap:8px; align-items:center; }
+
+/*--- Content Area ---*/
+.content{ flex:1; overflow-y:auto; padding:28px;
+  background:radial-gradient(ellipse at top, rgba(108,92,231,.06) 0%, transparent 50%);
+}
+.upload-zone{
+  border:2px dashed var(--border2); border-radius:var(--radius);
+  padding:36px 24px; transition:all .25s;
+  margin-bottom:18px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  background:linear-gradient(135deg, rgba(108,92,231,.04), rgba(162,155,254,.02));
+  position:relative; overflow:hidden;
+}
+/* Animated dashed border */
+.upload-zone::before{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent 0%, rgba(108,92,231,.15) 50%, transparent 100%);
+  background-size:200% 100%; animation:dashSweep 3s linear infinite;
+  pointer-events:none;
+}
+@keyframes dashSweep{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+.upload-zone:hover, .upload-zone.dragover{
+  border-color:var(--accent); background:rgba(108,92,231,.08);
+  transform:scale(1.005);
+  box-shadow:var(--shadow-soft), inset 0 0 40px rgba(108,92,231,.06);
+}
+.upload-zone svg{ width:36px; height:36px; color:var(--accent); margin-bottom:4px; opacity:.8; }
+.upload-zone-title{ font-size:.95rem; font-weight:600; margin-bottom:2px; }
+.upload-zone-sub{ font-size:.75rem; color:var(--text3); margin-bottom:6px; }
+.upload-zone-formats{
+  margin-top:10px; display:flex; gap:6px; justify-content:center;
+}
+.format-badge{
+  font-size:.68rem; font-weight:700; padding:4px 10px; border-radius:6px;
+  background:rgba(108,92,231,.12); color:var(--accent2); text-transform:uppercase;
+  border:1px solid rgba(108,92,231,.2);
+}
+
+/*--- Text Editor ---*/
+.text-area-wrap{
+  margin-bottom:20px; position:relative;
+}
+.text-input{
+  width:100%; min-height:220px; resize:vertical;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--radius); padding:20px; color:var(--text);
+  font-size:.95rem; line-height:1.8; font-family:inherit;
+  transition:border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.text-input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(108,92,231,.18), 0 8px 32px rgba(108,92,231,.08);
+  background:var(--bg2);
+}
+.text-input::placeholder{ color:var(--text3); transition:color .2s; }
+.text-input:focus::placeholder{ color:var(--border2); }
+.text-meta{
+  display:flex; justify-content:space-between; align-items:center;
+  margin-top:10px; padding:0 4px;
+  font-size:.75rem; color:var(--text3); gap:12px;
+}
+.text-meta #word-count{
+  font-variant-numeric:tabular-nums;
+  background:var(--bg); padding:3px 10px; border-radius:10px;
+  border:1px solid var(--border);
+  transition:border-color .18s, color .18s;
+}
+.text-meta #word-count:hover{ border-color:var(--accent); color:var(--accent2); }
+.char-count { font-weight:500; }
+
+/*--- Reader View ---*/
+.reader-view.hidden{ display:none; }
+/* Smooth fade-in when switching views */
+#editor-view, #reader-view{
+  animation:viewFade .35s cubic-bezier(.25,.46,.45,.94);
+}
+@keyframes viewFade{
+  from{ opacity:0; transform:translateY(8px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+.reader-text{
+  font-size:1.08rem; line-height:2; letter-spacing:.01em;
+  white-space:pre-wrap; word-break:break-word;
+  font-feature-settings:"liga","kern"; text-rendering:optimizeLegibility;
+}
+.reader-text.font-sm{ font-size:.94rem; line-height:1.85; }
+.reader-text.font-md{ font-size:1.08rem; line-height:2; }
+.reader-text.font-lg{ font-size:1.22rem; line-height:2.1; }
+.reader-text.font-xl{ font-size:1.38rem; line-height:2.2; }
+.reader-text .sent{
+  transition:background .25s, color .25s, padding .25s; border-radius:6px;
+  padding:2px 4px;
+}
+.reader-text .sentence{
+  cursor:pointer; transition:background .2s, box-shadow .2s, color .2s;
+  border-radius:4px; padding:3px 5px; margin:0 1px; display:inline;
+}
+.reader-text .sentence:hover{ background:rgba(108,92,231,.08); }
+.reader-text .sentence.active{
+  background:var(--accent-soft); color:var(--accent);
+  box-shadow:inset 0 0 0 1px var(--accent);
+  font-weight:500;
+}
+/* Floating scroll-to-top button — appears on long text */
+.scroll-top-btn{
+  position:fixed; bottom:140px; right:24px; z-index:50;
+  width:44px; height:44px; border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff; border:none; cursor:pointer; font-size:1.1rem;
+  box-shadow:0 4px 18px rgba(108,92,231,.35);
+  opacity:0; pointer-events:none; transform:translateY(20px) scale(.85);
+  transition:opacity .25s, transform .3s cubic-bezier(.34,1.56,.64,1);
+  display:flex; align-items:center; justify-content:center;
+}
+.scroll-top-btn.visible{
+  opacity:1; pointer-events:auto; transform:translateY(0) scale(1);
+}
+.scroll-top-btn:hover{ box-shadow:0 6px 22px rgba(108,92,231,.55); transform:translateY(-2px) scale(1.05); }
+/* Engine-tab active pulse */
+.engine-tab.active{
+  animation:enginePulse 2.2s ease-in-out infinite;
+}
+@keyframes enginePulse{
+  0%,100%{ box-shadow:0 0 0 0 rgba(108,92,231,.4); }
+  50%{ box-shadow:0 0 0 6px rgba(108,92,231,0); }
+}
+/* AA-Modal category pills */
+.aa-modal-cat{
+  display:inline-block; padding:4px 12px; margin:3px 4px 3px 0;
+  background:var(--hover); color:var(--text2);
+  border-radius:14px; font-size:.74rem; cursor:pointer;
+  transition:all .18s; border:1px solid transparent;
+}
+.aa-modal-cat:hover{ background:var(--accent-soft); color:var(--accent); transform:translateY(-1px); border-color:var(--accent); }
+@keyframes sentGlow{
+  from{ box-shadow:0 2px 0 var(--accent2), 0 0 16px rgba(108,92,231,.15); }
+  to{ box-shadow:0 2px 0 var(--accent2), 0 0 28px rgba(108,92,231,.35); }
+}
+
+/*--- Settings Grid ---*/
+.settings-row{
+  display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;
+}
+.setting-card{
+  flex:1; min-width:140px; background:var(--card);
+  border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; transition:border-color .2s, box-shadow .2s, transform .2s;
+}
+.setting-card:hover{
+  border-color:var(--border2); box-shadow:0 4px 16px rgba(0,0,0,.15);
+  transform:translateY(-2px);
+}
+.setting-card label{
+  display:block; font-size:.75rem; font-weight:600;
+  color:var(--text2); margin-bottom:10px; text-transform:uppercase;
+  letter-spacing:0.8px;
+}
+.setting-card select, .setting-card input[type=range]{
+  width:100%;
+}
+.setting-card select{
+  background:var(--bg); color:var(--text); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:8px 10px; font-size:.85rem;
+  cursor:pointer;
+}
+.setting-card select:focus{ border-color:var(--accent); }
+.range-label{
+  display:flex; justify-content:space-between; align-items:center; font-size:.75rem;
+  color:var(--text3); margin-top:8px;
+}
+.range-label .end-labels{ display:flex; gap:6px; }
+.range-label .value{ color:var(--accent2); font-weight:600; font-size:.82rem; }
+
+input[type=range]{
+  -webkit-appearance:none; appearance:none;
+  height:6px; background:var(--border); border-radius:3px;
+  outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none;
+  width:18px; height:18px; border-radius:50%; background:var(--accent2);
+  cursor:pointer; border:3px solid var(--bg);
+  box-shadow:0 2px 6px rgba(0,0,0,.3); transition:transform .1s;
+}
+input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.15); }
+input[type=range]::-moz-range-thumb{
+  width:18px; height:18px; background:var(--accent); border-radius:50%;
+  cursor:pointer; border:2px solid var(--bg);
+}
+
+/*--- Speed Presets ---*/
+.speed-presets{ display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; }
+.speed-preset{
+  font-size:.68rem; padding:4px 10px; border-radius:20px;
+  background:var(--bg); border:1px solid var(--border);
+  color:var(--text2); cursor:pointer; transition:all .18s ease;
+  font-weight:600;
+}
+.speed-preset:hover{ border-color:var(--accent2); color:var(--text); transform:translateY(-1px); }
+.speed-preset.active{
+  background:linear-gradient(135deg, rgba(108,92,231,.2), rgba(162,155,254,.1));
+  border-color:var(--accent); color:var(--accent2);
+  box-shadow:0 2px 8px rgba(108,92,231,.2);
+}
+
+/*--- Buttons ---*/
+.btn{
+  display:inline-flex; align-items:center; gap:7px;
+  padding:9px 18px; border-radius:var(--radius-sm);
+  font-size:.85rem; font-weight:600; transition:all .15s;
+  white-space:nowrap; position:relative; overflow:hidden;
+}
+/* Ripple effect */
+.btn::after, .player-btn::after, .nav-item::after, .voice-preset::after,
+.aa-search-btn::after, .engine-tab::after, .bookmark-chip::after{
+  content:''; position:absolute; width:100%; height:100%; top:0; left:0;
+  pointer-events:none; background-image:radial-gradient(circle, rgba(255,255,255,.3) 10%, transparent 10.5%);
+  background-position:50%; background-size:0% 0%; background-repeat:no-repeat;
+  transition:background-size .4s ease, background-position 0s .4s;
+}
+.btn:active::after, .player-btn:active::after, .nav-item:active::after,
+.voice-preset:active::after, .aa-search-btn:active::after, .engine-tab:active::after{
+  background-size:200% 200%; transition:background-size .4s ease;
+}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),var(--accent3));
+  color:#fff; box-shadow:0 2px 12px rgba(108,92,231,.35);
+}
+.btn-primary:hover{ transform:translateY(-1px); box-shadow:0 4px 16px rgba(108,92,231,.5); }
+.btn-primary:active{ transform:translateY(0); }
+.btn-primary:disabled,
+.btn[disabled]{
+  opacity:.45; cursor:not-allowed; transform:none !important;
+  filter:grayscale(.3);
+}
+
+.btn-ghost{
+  background:var(--bg3); color:var(--text2); border:1px solid var(--border);
+}
+.btn-ghost:hover{ color:var(--text); border-color:var(--border2); background:var(--card); }
+.btn-ghost.active{ color:var(--accent2); border-color:var(--accent); }
+
+/* Bookmark flash animation */
+@keyframes bmFlash{
+  0%{ transform:scale(1); }
+  30%{ transform:scale(1.15); color:var(--orange); border-color:var(--orange);
+       box-shadow:0 0 0 6px rgba(253,203,110,.2); }
+  100%{ transform:scale(1); }
+}
+.bm-flash{ animation:bmFlash .8s ease; }
+
+.btn svg{ width:16px; height:16px; }
+
+/*--- Player Bar ---*/
+.player{
+  padding:18px 28px; border-top:1px solid var(--border);
+  background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  display:none; align-items:center; gap:24px;
+  box-shadow:0 -8px 32px rgba(0,0,0,.25);
+}
+.player.visible{ display:flex; animation:slideUp .3s cubic-bezier(.25,.46,.45,.94); }
+@keyframes slideUp{ from{ transform:translateY(100%); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+.player-controls{ display:flex; gap:6px; align-items:center; }
+.player-btn{
+  width:40px; height:40px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--card); border:1px solid var(--border);
+  transition:all var(--transition); flex-shrink:0;
+  color:var(--text2);
+}
+.player-btn:hover{ border-color:var(--accent); color:var(--accent2); background:var(--bg3); transform:scale(1.05); }
+.player-btn svg{ width:18px; height:18px; }
+.player-btn.play{
+  background:linear-gradient(135deg,var(--accent),var(--accent3));
+  color:#fff; border-color:transparent; width:48px; height:48px;
+}
+.player-btn.play:hover{ color:#fff; transform:scale(1.05); }
+.player-btn.play.is-playing{ animation:playPulse 2s ease-in-out infinite; }
+@keyframes playPulse{
+  0%,100%{ box-shadow:0 4px 16px rgba(108,92,231,.3); }
+  50%{ box-shadow:0 4px 24px rgba(108,92,231,.6), 0 0 0 8px rgba(108,92,231,.1); }
+}
+
+.player-progress{ flex:1; display:flex; flex-direction:column; gap:4px; }
+.progress-bar{
+  height:6px; background:var(--border); border-radius:3px;
+  cursor:pointer; position:relative; overflow:visible;
+}
+.progress-bar:hover{ height:8px; transition:height .12s; }
+.progress-fill{
+  height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2));
+  border-radius:3px; width:0%; transition:width .1s linear;
+  position:relative;
+  box-shadow:0 0 10px rgba(108,92,231,.35);
+}
+.progress-fill::after{
+  content:''; position:absolute; right:-6px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; background:var(--accent2); border-radius:50%;
+  box-shadow:0 0 12px rgba(162,155,254,.7), 0 0 4px rgba(255,255,255,.3);
+  transition:transform .12s;
+}
+.progress-bar:hover .progress-fill::after{ transform:translateY(-50%) scale(1.2); }
+.progress-info{
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:.72rem; color:var(--text3);
+}
+
+.player-info{
+  display:flex; align-items:center; gap:14px; min-width:0;
+}
+.now-playing{ font-size:.78rem; display:flex; align-items:center; gap:10px; }
+.np-icon{
+  flex-shrink:0; width:36px; height:36px; border-radius:8px;
+  background:linear-gradient(135deg,var(--accent),var(--accent3));
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:1.1rem; box-shadow:0 2px 10px rgba(108,92,231,.3);
+}
+.np-info{ min-width:0; flex:1; }
+.np-title{
+  font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:180px;
+}
+.np-voice{ color:var(--text3); font-size:.72rem; margin-top:2px; }
+/* Audio wave animation shown while playing */
+.np-wave{
+  display:inline-flex; gap:2px; align-items:center; height:18px; vertical-align:middle;
+}
+.np-wave .wb{
+  width:3px; height:100%; background:var(--accent2); border-radius:2px;
+  animation:wbBar 1s ease-in-out infinite;
+}
+.np-wave .wb:nth-child(2){ animation-delay:.15s; }
+.np-wave .wb:nth-child(3){ animation-delay:.3s; }
+.np-wave .wb:nth-child(4){ animation-delay:.45s; }
+.np-wave .wb:nth-child(5){ animation-delay:.6s; }
+@keyframes wbBar{ 0%,100%{ height:30%; } 50%{ height:100%; } }
+@keyframes npIconPulse{ 0%,100%{ transform:scale(1); box-shadow:0 2px 10px rgba(108,92,231,.3);} 50%{ transform:scale(1.08); box-shadow:0 4px 18px rgba(108,92,231,.6);} }
+
+/*--- Bookmarks ---*/
+.bookmarks-bar{
+  display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;
+  padding:10px 12px; background:var(--card); border:1px solid var(--border);
+  border-radius:var(--radius); align-items:center; max-width:760px;
+  margin-left:auto; margin-right:auto;
+}
+.bookmarks-bar .bm-label{
+  font-size:.75rem; color:var(--text3); margin-right:8px; font-weight:600;
+}
+.bookmark-chip{
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:.72rem; padding:5px 12px; border-radius:20px;
+  background:var(--bg); border:1px solid var(--border2);
+  color:var(--text2); cursor:pointer; transition:all .15s;
+  font-weight:500;
+}
+.bookmark-chip:hover{ border-color:var(--orange); color:var(--orange); transform:translateY(-1px); }
+.bookmark-chip.active{
+  border-color:var(--orange); color:#fff;
+  background:linear-gradient(135deg, var(--orange), #e89456);
+  box-shadow:0 2px 8px rgba(253,203,110,.25);
+}
+
+/*--- Toast ---*/
+.toast{
+  position:fixed; bottom:90px; left:50%; transform:translateX(-50%) translateY(12px);
+  background:var(--bg2); border:1px solid var(--border2);
+  border-radius:12px; padding:14px 42px 14px 22px; font-size:.88rem; font-weight:500;
+  box-shadow:var(--shadow-med); opacity:0; pointer-events:none;
+  transition:opacity .3s cubic-bezier(.25,.46,.45,.94), transform .3s cubic-bezier(.25,.46,.45,.94);
+  z-index:1000; max-width:90%; min-width:240px; text-align:center;
+  backdrop-filter:blur(12px);
+  overflow:hidden;
+}
+.toast::before{
+  content:''; position:absolute; bottom:0; left:0; height:3px; width:100%;
+  background:currentColor; opacity:.4; transform-origin:left center;
+  animation:toastBar 3s linear forwards;
+}
+@keyframes toastBar{ from{ transform:scaleX(1); } to{ transform:scaleX(0); } }
+.toast-close{
+  position:absolute; top:8px; right:10px; width:18px; height:18px;
+  display:flex; align-items:center; justify-content:center; opacity:.5;
+  pointer-events:auto; cursor:pointer; font-size:.9rem; border-radius:50%;
+  transition:opacity .12s, background .12s;
+}
+.toast-close:hover{ opacity:1; background:rgba(255,255,255,.08); }
+.toast{ pointer-events:auto; cursor:pointer; }
+.toast.error{ border-color:var(--red); color:var(--red); background:rgba(231,76,60,.08); }
+.toast.success{ border-color:var(--green); color:var(--green); background:rgba(0,206,201,.08); }
+.toast.info{ border-color:var(--accent); color:var(--accent2); background:rgba(108,92,231,.08); }
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+.toast:hover{ transform:translateX(-50%) translateY(-2px); box-shadow:var(--shadow-high); }
+
+/*--- Mobile ---*/
+.mobile-toggle{
+  display:none; position:fixed; top:16px; left:16px; z-index:100;
+  width:40px; height:40px; border-radius:8px; background:var(--card);
+  border:1px solid var(--border); align-items:center; justify-content:center;
+}
+/* Backdrop overlay used for the mobile sidebar */
+.sidebar-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.55);
+  backdrop-filter:blur(2px); z-index:85;
+  opacity:0; pointer-events:none; transition:opacity .25s ease;
+}
+.sidebar-backdrop.visible{ opacity:1; pointer-events:auto; }
+@media(max-width:768px){
+  .sidebar{
+    position:fixed; left:0; top:0; bottom:0; z-index:90;
+    transform:translateX(-100%); box-shadow:4px 0 24px rgba(0,0,0,.5);
+    width:300px; min-width:300px;
+  }
+  .sidebar.open{ transform:translateX(0); }
+  .mobile-toggle{ display:flex; }
+  .main{ padding-top:0; }
+  .main-header{ padding:14px 16px 14px 60px; gap:8px; }
+  /* v12: hide the text labels inside header buttons so the "Vorlesen" /
+     "Speichern" buttons shrink to icon-only and stop overflowing the
+     390px-wide mobile viewport (was x2=495 vs vp_w=390, button invisible
+     off-screen to the right) */
+  .header-actions .btn{ padding:8px 10px; }
+  .header-actions .btn-label{ display:none; }
+  .content{ padding:16px; }
+  .settings-row{ gap:10px; }
+  .setting-card{ min-width:100%; }
+  .player{ flex-wrap:wrap; padding:14px 16px; }
+  .player-info{ flex:1; }
+  .player-progress{ flex-basis:100%; order:-1; }
+  .reader-text{ font-size:.96rem; line-height:1.85; }
+  .now-playing .np-title{ max-width:140px; }
+  .shortcuts-box{ padding:20px; }
+  /* v12: lift the toast above the (taller, wrapping) mobile player bar so
+     it doesn't overlap the playback controls (player was y=700..844 = 144px
+     tall; toast at bottom:90px sat inside the player) */
+  .toast{ bottom:160px; }
+  /* Backdrop overlay when sidebar is open on mobile */
+  .sidebar-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,.55);
+    backdrop-filter:blur(2px); z-index:85;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  .sidebar-backdrop.visible{ opacity:1; pointer-events:auto; }
+}
+
+/*--- Loading Spinner ---*/
+.spinner{
+  width:20px; height:20px; border:2px solid var(--border);
+  border-top-color:var(--accent); border-radius:50%;
+  animation:spin .8s linear infinite; display:inline-block;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+/*--- Voice Preset Cards ---*/
+.voice-presets{
+  display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;
+}
+.voice-preset{
+  display:flex; align-items:center; gap:8px; padding:8px 14px;
+  border-radius:var(--radius-sm); background:var(--card);
+  border:1px solid var(--border); cursor:pointer; transition:all .18s ease;
+  font-size:.8rem; font-weight:500; position:relative; overflow:hidden;
+}
+.voice-preset:hover{
+  border-color:var(--accent2); transform:translateY(-2px);
+  box-shadow:0 4px 16px rgba(108,92,231,.2);
+}
+.voice-preset.active{
+  border-color:var(--accent); background:rgba(108,92,231,.15);
+  box-shadow:0 2px 12px rgba(108,92,231,.25);
+}
+.voice-preset.active .vp-emoji{ animation:vpPulse 1.5s ease-in-out infinite; }
+@keyframes vpPulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.15); } }
+.voice-preset .vp-emoji{ font-size:1.1rem; }
+.voice-preset .vp-name{ font-weight:600; }
+.voice-preset .vp-desc{ font-size:.68rem; color:var(--text3); }
+
+/*--- Hidden file input ---*/
+.hidden-input{ display:none; }
+.hidden{ display:none !important; }
+
+/*--- Piper audio (hidden, just controlled via JS) ---*/
+#piper-audio{ position:absolute; left:-9999px; width:1px; height:1px; }
+
+/*--- Engine toggle (Browser | Server Piper) ---*/
+.engine-tabs{
+  display:inline-flex; gap:2px; padding:4px; border-radius:12px;
+  background:var(--bg3); border:1px solid var(--border); margin:4px 0 18px;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.15);
+}
+.engine-tab{
+  padding:8px 18px; border:none; background:transparent; color:var(--text2);
+  font-size:.82rem; font-weight:600; border-radius:8px; cursor:pointer; transition:.18s;
+  display:flex; align-items:center; gap:6px; position:relative; overflow:hidden;
+}
+.engine-tab:hover{ color:var(--text); }
+.engine-tab.active{
+  background:linear-gradient(135deg,var(--accent),var(--accent3)); color:#fff;
+  box-shadow:0 4px 14px rgba(108,92,231,.35);
+}
+.engine-tab .pip-dot{
+  display:inline-block; width:6px; height:6px; border-radius:50%; background:#888;
+  transition:background .2s, box-shadow .2s;
+}
+.engine-tab.active .pip-dot{
+  background:#5fff7d; box-shadow:0 0 8px #5fff7d;
+  animation:pipBlink 1.2s ease-in-out infinite;
+}
+@keyframes pipBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.55; } }
+
+/*--- Piper Voice cards (replaces the regular voice preset cards when engine=piper) ---*/
+.piper-voices{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+
+/*--- TTS Loading Shimmer ---*/
+.tts-loading{
+  position:fixed; bottom:0; left:0; right:0; height:3px;
+  z-index:500; pointer-events:none;
+}
+.tts-loading .tts-bar{
+  height:100%; width:100%; background:linear-gradient(90deg,
+    transparent 0%, var(--accent) 30%, var(--accent2) 50%, var(--accent) 70%, transparent 100%);
+  background-size:200% 100%; animation:ttsShimmer 1s linear infinite;
+}
+@keyframes ttsShimmer{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+
+/*--- Anna's Archive Search ---*/
+.aa-search{
+  display:flex; gap:6px; margin-bottom:8px;
+  padding-top:10px; margin-top:8px; border-top:1px solid var(--border);
+}
+.aa-search-input{
+  flex:1; min-width:0;
+  background:var(--card); color:var(--text);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:7px 10px; font-size:.78rem;
+  transition:border-color .18s, box-shadow .18s, background .18s;
+}
+.aa-search-input:focus{
+  border-color:var(--accent); background:var(--bg2);
+  box-shadow:0 0 0 3px rgba(108,92,231,.15);
+}
+.aa-search-input::placeholder{ color:var(--text3); }
+.aa-search-btn{
+  width:30px; height:30px; border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--accent),var(--accent3)); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:all .15s; box-shadow:0 2px 8px rgba(108,92,231,.25);
+}
+.aa-search-btn:hover{ transform:translateY(-1px); box-shadow:0 4px 12px rgba(108,92,231,.4); }
+.aa-search-btn svg{ width:14px; height:14px; }
+.aa-hint{
+  font-size:.7rem; color:var(--text3); line-height:1.6;
+  padding:8px 4px;
+}
+.aa-hint a{
+  color:var(--accent2); cursor:pointer; text-decoration:underline;
+  text-decoration-color:var(--border2);
+}
+.aa-hint a:hover{ text-decoration-color:var(--accent); }
+.aa-loading{
+  display:flex; align-items:center; gap:8px; justify-content:center;
+  padding:20px; color:var(--text3); font-size:.78rem;
+}
+.aa-empty{
+  text-align:center; padding:24px 10px; color:var(--text3);
+  font-size:.75rem; line-height:1.6;
+  background:var(--card); border:1px dashed var(--border);
+  border-radius:var(--radius-sm); margin:4px;
+}
+.aa-result{
+  display:flex; gap:10px; padding:8px;
+  border-radius:var(--radius-sm);
+  background:var(--card); border:1px solid var(--border);
+  margin-bottom:6px; cursor:pointer; transition:all .18s ease;
+  font-size:.75rem; position:relative; overflow:hidden;
+}
+.aa-result:hover{
+  border-color:var(--accent); transform:translateX(3px);
+  box-shadow:0 4px 14px rgba(108,92,231,.18);
+}
+.aa-result-thumb{
+  width:36px; height:54px; border-radius:4px;
+  background:var(--bg3); flex-shrink:0; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.1rem; color:var(--text3); position:relative;
+}
+.aa-result-thumb img{
+  width:100%; height:100%; object-fit:cover;
+  transition:transform .3s ease;
+}
+.aa-result:hover .aa-result-thumb img{ transform:scale(1.08); }
+.aa-result-thumb::after{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg, transparent 40%, rgba(255,255,255,.06) 100%);
+  pointer-events:none;
+}
+.aa-result-info{ flex:1; min-width:0; }
+.aa-result-title{
+  font-weight:500; line-height:1.3; color:var(--text);
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.aa-result-id{ color:var(--text3); font-size:.65rem; margin-top:3px; }
+
+/*--- Tooltips for icon buttons ---*/
+.player-btn, .speed-preset[data-tip], .voice-preset[data-tip]{
+  position:relative;
+}
+.player-btn[data-tip]:hover::after, .speed-preset[data-tip]:hover::after,
+.voice-preset[data-tip]:hover::after, .btn[data-tip]:hover::after,
+[data-tip]:hover::after{
+  content:attr(data-tip); position:absolute; bottom:calc(100% + 6px); left:50%;
+  transform:translateX(-50%); padding:5px 10px; font-size:.7rem; font-weight:500;
+  background:var(--bg3); color:var(--text); border:1px solid var(--border2);
+  border-radius:6px; white-space:nowrap; pointer-events:none; z-index:200;
+  box-shadow:0 4px 12px rgba(0,0,0,.3);
+  animation:tipIn .15s ease;
+}
+@keyframes tipIn{ from{opacity:0; transform:translateX(-50%) translateY(-2px);} to{opacity:1; transform:translateX(-50%) translateY(0);} }
+
+/*--- Keyboard shortcuts overlay ---*/
+.shortcuts-overlay{
+  position:fixed; inset:0; z-index:300;
+  background:rgba(0,0,0,.6); backdrop-filter:blur(6px);
+  display:flex; align-items:center; justify-content:center; padding:20px;
+  animation:fadeIn .15s ease;
+}
+.shortcuts-box{
+  background:var(--bg2); border:1px solid var(--border2);
+  border-radius:var(--radius); max-width:420px; width:100%;
+  padding:28px; box-shadow:var(--shadow-med);
+  animation:slideUp .2s ease;
+}
+.shortcuts-box h3{
+  font-size:1.1rem; margin-bottom:18px; font-weight:700;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.shortcut-list{ display:flex; flex-direction:column; gap:10px; }
+.shortcut-row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 0; border-bottom:1px solid var(--border);
+  font-size:.85rem;
+}
+.shortcut-row:last-child{ border-bottom:none; }
+.shortcut-row .sc-label{ color:var(--text2); }
+.shortcut-row .sc-key{
+  font-family:monospace; font-size:.75rem; font-weight:700;
+  background:var(--bg3); border:1px solid var(--border2);
+  border-radius:6px; padding:3px 10px; color:var(--accent2);
+}
+
+/*--- Book Detail Modal ---*/
+.aa-modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.65);
+  z-index:200; display:flex; align-items:center; justify-content:center;
+  padding:20px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  animation:fadeIn .2s ease;
+}
+@keyframes fadeIn{ from{opacity:0; backdrop-filter:blur(0)} to{opacity:1} }
+.aa-modal{
+  background:rgba(21,21,28,.95); border:1px solid var(--border2);
+  border-radius:16px; max-width:760px; width:100%;
+  max-height:90vh; overflow-y:auto; display:flex; flex-direction:column;
+  animation:modalPop .28s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(108,92,231,.1);
+  backdrop-filter:blur(12px);
+}
+@keyframes modalPop{ from{transform:translateY(24px) scale(.96);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+.aa-modal-header{
+  padding:18px 24px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+}
+.aa-modal-header h2{ font-size:1.15rem; line-height:1.3; }
+.aa-modal-close{
+  width:30px; height:30px; border-radius:50%;
+  background:var(--bg3); display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:all .15s;
+}
+.aa-modal-close:hover{ background:var(--border2); color:var(--red); }
+.aa-modal-body{ padding:24px; display:flex; gap:24px; flex-wrap:wrap; }
+.aa-modal-cover{
+  flex:0 0 160px; width:160px; overflow:hidden; border-radius:var(--radius-sm);
+}
+.aa-modal-cover img{
+  width:100%; border-radius:var(--radius-sm);
+  box-shadow:0 12px 32px rgba(0,0,0,.5);
+  background:var(--bg3); transition:transform .35s ease;
+  display:block;
+}
+.aa-modal-cover:hover img{ transform:scale(1.05); }
+.aa-modal-cover .no-cover{
+  width:100%; aspect-ratio:2/3; background:var(--bg3);
+  border-radius:var(--radius-sm);
+  display:flex; align-items:center; justify-content:center;
+  font-size:3rem; color:var(--text3);
+}
+.aa-modal-info{ flex:1; min-width:200px; }
+.aa-meta-row{
+  display:flex; gap:8px; padding:6px 0;
+  font-size:.82rem; border-bottom:1px solid var(--border);
+}
+.aa-meta-row:last-child{ border-bottom:none; }
+.aa-meta-label{
+  color:var(--text3); font-weight:500; min-width:90px;
+  text-transform:uppercase; font-size:.7rem; letter-spacing:.8px;
+  display:flex; align-items:center;
+}
+.aa-meta-value{ color:var(--text); }
+.aa-modal-desc{
+  padding:0 24px 18px; font-size:.88rem; line-height:1.65;
+  color:var(--text2); border-top:1px solid var(--border); margin-top:8px;
+}
+.aa-modal-desc h4{ color:var(--text); margin:14px 0 6px; font-size:.8rem; text-transform:uppercase; letter-spacing:.8px; }
+.aa-modal-actions{
+  padding:16px 24px; border-top:1px solid var(--border);
+  display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+}
+.aa-servers{
+  padding:0 24px 18px;
+}
+.aa-servers h4{
+  font-size:.75rem; color:var(--text2); margin-bottom:8px;
+  text-transform:uppercase; letter-spacing:.8px;
+}
+.aa-server-list{ display:flex; flex-wrap:wrap; gap:6px; }
+.aa-server{
+  font-size:.7rem; padding:4px 10px; border-radius:12px;
+  background:var(--bg3); color:var(--text2);
+  border:1px solid var(--border);
+}
+.aa-login-notice{
+  display:flex; align-items:center; gap:8px;
+  font-size:.75rem; color:var(--orange);
+  background:rgba(253,203,110,.08);
+  border:1px solid rgba(253,203,110,.25);
+  padding:10px 14px; border-radius:var(--radius-sm);
+  margin:0 24px 18px;
+}
+.aa-cats{
+  display:flex; gap:6px; flex-wrap:wrap; padding:0 24px 14px;
+}
+.aa-cat{
+  font-size:.7rem; padding:3px 10px; border-radius:12px;
+  background:var(--bg3); color:var(--text2);
+  border:1px solid var(--border);
+  transition:all .18s; cursor:default;
+}
+.aa-cat:hover{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+</style>
+</head>
+<body>
+
+<button class="mobile-toggle" id="mobile-toggle" onclick="toggleSidebar()" aria-label="Navigation öffnen" title="Navigation">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span style="font-size:1.6rem">🎧</span>
+      <span class="logo">ReaderPlus</span>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" id="nav-new" onclick="showEditor()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Neuer Text
+      </button>
+      <button class="nav-item" id="nav-reader" onclick="showReader()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Reader
+      </button>
+    </nav>
+    <div class="library-section">
+      <div class="library-label">📚 Bibliothek</div>
+      <div id="library-list">
+        <div class="library-empty">
+          <span class="lib-icon">📂</span>
+          Noch keine Texte gespeichert.<br><span style="font-size:.72rem;opacity:.7">Lade ein PDF hoch oder füge Text ein.</span>
+        </div>
+      </div>
+    </div>
+    <div class="library-section">
+      <div class="library-label">🔍 Anna's Archive</div>
+      <div class="aa-search">
+        <input type="text" id="aa-search-input" class="aa-search-input" placeholder="Buch suchen..." onkeydown="if(event.key==='Enter') searchAnnaArchive()">
+        <button class="aa-search-btn" onclick="searchAnnaArchive()" title="Suchen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </div>
+      <div id="aa-results" class="aa-results">
+        <div class="aa-hint">
+          Tipp: Suche nach Titel, Autor oder ISBN.<br>
+          z.B. <a onclick="document.getElementById('aa-search-input').value='1984 orwell';searchAnnaArchive()">1984 orwell</a>,
+          <a onclick="document.getElementById('aa-search-input').value='sapiens yuval';searchAnnaArchive()">sapiens yuval</a>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="theme-toggles" style="display:flex;gap:6px;justify-content:center;margin-bottom:6px">
+        <button onclick="setTheme('')" class="theme-toggle-btn" data-theme-val="" title="Dunkel" style="width:22px;height:22px;border-radius:50%;background:#1a1a24;border:2px solid var(--border2);cursor:pointer"></button>
+        <button onclick="setTheme('sepia')" class="theme-toggle-btn" data-theme-val="sepia" title="Sepia" style="width:22px;height:22px;border-radius:50%;background:#2a2018;border:2px solid var(--border2);cursor:pointer"></button>
+        <button onclick="setTheme('light')" class="theme-toggle-btn" data-theme-val="light" title="Hell" style="width:22px;height:22px;border-radius:50%;background:#f4f4f8;border:2px solid var(--border2);cursor:pointer"></button>
+      </div>
+      <span style="color:var(--green);text-shadow:0 0 8px rgba(0,206,201,.5)">●</span> ReaderPlus
+      <span style="margin-left:6px;opacity:.5;font-family:monospace;font-size:.65rem">
+        <a onclick="toggleShortcuts()" style="cursor:pointer;color:var(--text2);text-decoration:underline;text-decoration-color:var(--border)">⌨ ?</a>
+      </span>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="main-header">
+      <div>
+        <h1 id="page-title">Neuer Text</h1>
+        <div class="subtitle" id="page-subtitle">PDF hochladen oder Text einfügen und vorlesen lassen</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-ghost" id="btn-save" onclick="saveToLibrary()" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span class="btn-label">Speichern</span>
+        </button>
+        <button class="btn btn-primary" id="btn-read" onclick="startReading()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span class="btn-label">Vorlesen</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="content" id="content-area">
+      <!-- Editor View -->
+      <div id="editor-view">
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="upload-zone-title">Datei hochladen</span>
+          <span class="upload-zone-sub">· klicken oder hineinziehen</span>
+          <span class="format-badge">PDF</span>
+          <span class="format-badge">TXT</span>
+          <span class="format-badge">MD</span>
+        </div>
+        <input type="file" id="file-input" class="hidden-input" accept=".pdf,.txt,.md,.markdown" onchange="handleFileUpload(event)">
+
+        <div class="text-area-wrap">
+          <textarea class="text-input" id="text-input" placeholder="Oder Text hier einfügen... (z.B. Artikel, Buchausschnitt, E-Mail)" oninput="updateCharCount()"></textarea>
+          <div class="text-meta">
+            <span class="char-count" id="char-count">0 Zeichen</span>
+            <span id="word-count">0 Wörter · ~0 Min</span>
+          </div>
+        </div>
+
+        <div class="engine-tabs" id="engine-tabs">
+          <button class="engine-tab" data-engine="browser" onclick="setEngine('browser')">
+            <span class="pip-dot"></span> 🌐 Browser
+          </button>
+          <button class="engine-tab active" data-engine="piper" onclick="setEngine('piper')">
+            <span class="pip-dot"></span> 🧠 Server (Piper)
+          </button>
+        </div>
+        <!-- Browser voice presets hidden by default (Piper is the new default) -->
+        <div class="voice-presets" id="voice-presets" style="display:none"></div>
+        <div class="piper-voices" id="piper-voices"></div>
+
+        <div class="settings-row" id="browser-only-settings">
+          <div class="setting-card" style="display:none">
+            <label id="voice-select-label">Stimme</label>
+            <select id="voice-select" onchange="onVoiceChange()"></select>
+          </div>
+          <div class="setting-card">
+            <label>Tempo</label>
+            <input type="range" id="rate-slider" min="0.5" max="2" step="0.05" value="1" oninput="updateRateLabel()">
+            <div class="range-label"><span class="end-labels"><span>Langsam</span><span style="color:var(--text3)">↔</span><span>Schnell</span></span><span class="value" id="rate-value">1.0×</span></div>
+            <div class="speed-presets">
+              <button class="speed-preset" onclick="setRate(0.75)">0.75×</button>
+              <button class="speed-preset active" onclick="setRate(1.0)">1×</button>
+              <button class="speed-preset" onclick="setRate(1.25)">1.25×</button>
+              <button class="speed-preset" onclick="setRate(1.5)">1.5×</button>
+              <button class="speed-preset" onclick="setRate(2.0)">2×</button>
+            </div>
+          </div>
+          <div class="setting-card" style="display:none">
+            <label>Tonhöhe</label>
+            <input type="range" id="pitch-slider" min="0" max="2" step="0.1" value="1" oninput="updatePitchLabel()">
+            <div class="range-label"><span class="end-labels"><span>Tief</span><span style="color:var(--text3)">↔</span><span>Hoch</span></span><span class="value" id="pitch-value">1.0</span></div>
+          </div>
+          <div class="setting-card">
+            <label>Lautstärke</label>
+            <input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1" oninput="updateVolLabel()">
+            <div class="range-label"><span class="end-labels"><span>Stumm</span><span style="color:var(--text3)">↔</span><span>Voll</span></span><span class="value" id="vol-value">100%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reader View -->
+      <div id="reader-view" class="reader-view hidden">
+        <div class="bookmarks-bar" id="bookmarks-bar"></div>
+        <div class="reader-text" id="reader-text" aria-label="Gelesener Text"></div>
+        <!-- v9: dedicated aria-live status region for the active sentence -->
+        <div id="reader-status" aria-live="polite" aria-atomic="true"
+             class="sr-only" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div>
+      </div>
+    </div>
+
+    <!-- Player Bar -->
+    <div class="player" id="player">
+      <audio id="piper-audio" preload="auto"></audio>
+      <div class="player-controls">
+        <button class="player-btn" onclick="skipSent(-5)" data-tip="5 Sätze zurück" aria-label="5 Sätze zurück">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+        </button>
+        <button class="player-btn play" id="play-pause-btn" onclick="togglePlay()" data-tip="Play / Pause" aria-label="Play / Pause">
+          <svg id="play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <svg id="pause-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button class="player-btn" onclick="skipSent(5)" data-tip="5 Sätze weiter" aria-label="5 Sätze weiter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
+        <button class="player-btn" onclick="stopReading()" data-tip="Stopp" aria-label="Stopp">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+        </button>
+      </div>
+      <div class="player-progress">
+        <div class="progress-bar" id="progress-bar" onclick="seekTo(event)">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-info">
+          <span id="current-sentence-index">0 / 0</span>
+          <span id="progress-pct" style="color:var(--accent2);font-weight:600">0%</span>
+          <span id="total-duration">~0 min</span>
+        </div>
+      </div>
+      <div class="player-info">
+        <div class="now-playing">
+          <span class="np-icon" id="np-icon">🎵</span>
+          <div class="np-info">
+            <div class="np-title" id="np-title">—</div>
+            <div class="np-voice" id="np-voice">—</div>
+          </div>
+          <div class="np-wave" id="np-wave" style="display:none">
+            <span class="wb"></span><span class="wb"></span><span class="wb"></span><span class="wb"></span><span class="wb"></span>
+          </div>
+        </div>
+        <button class="btn btn-ghost" onclick="addBookmark()" data-tip="Lesezeichen (B)" aria-label="Lesezeichen setzen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="btn btn-ghost" onclick="downloadAudio()" data-tip="Audio herunterladen" aria-label="Audio herunterladen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Keyboard Shortcut Overlay -->
+<div class="shortcuts-overlay" id="shortcuts-overlay" style="display:none" onclick="if(event.target===this) closeShortcuts()">
+  <div class="shortcuts-box">
+    <h3>⌨️ Tastaturkürzel</h3>
+    <div class="shortcut-list">
+      <div class="shortcut-row"><span class="sc-label">Play / Pause</span><span class="sc-key">Leertaste</span></div>
+      <div class="shortcut-row"><span class="sc-label">5 Sätze weiter</span><span class="sc-key">→</span></div>
+      <div class="shortcut-row"><span class="sc-label">5 Sätze zurück</span><span class="sc-key">←</span></div>
+      <div class="shortcut-row"><span class="sc-label">Stopp</span><span class="sc-key">S</span></div>
+      <div class="shortcut-row"><span class="sc-label">Lesezeichen</span><span class="sc-key">B</span></div>
+      <div class="shortcut-row"><span class="sc-label">Theme wechseln</span><span class="sc-key">T</span></div>
+      <div class="shortcut-row"><span class="sc-label">Diese Hilfe</span><span class="sc-key">Shift + ?</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- TTS Loading Shimmer -->
+<div class="tts-loading" id="tts-loading" style="display:none"><div class="tts-bar"></div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+ *  ReaderPlus — TTS Web Reader
+ *  100% client-side: Web Speech API + pdf.js
+ * ========================================================= */
+
+// ---- State ----
+let voices = [];
+let piperVoices = [];        // server-side Piper voices
+let currentEngine = 'piper'; // 'browser' | 'piper' — default to Piper (server)
+let selectedPiperVoice = 'de_DE-thorsten-medium';
+let sentences = [];
+let currentSentIdx = 0;
+let isPlaying = false;
+let isPaused = false;
+let currentUtterance = null;
+function _safeParse(s, fb) {
+  try { const v = JSON.parse(s ?? fb); return v != null ? v : JSON.parse(fb); }
+  catch (_) { try { return JSON.parse(fb); } catch (_) { return []; } }
+}
+let library = _safeParse(localStorage.getItem('rp_library'), '[]');
+let bookmarks = _safeParse(localStorage.getItem('rp_bookmarks'), '[]');
+let currentTitle = '';
+let currentLibraryId = null;
+let progressTimers = [];
+
+// Voice presets (mapped to browser voice URIs as best as possible)
+const VOICE_PRESETS = [
+  { emoji:'👩', name:'Rachel',     desc:'Weiblich · Warm',     lang:'de-DE', gender:'female' },
+  { emoji:'👨', name:'Mark',       desc:'Männlich · Tief',     lang:'de-DE', gender:'male' },
+  { emoji:'👨‍🦰', name:'Dustin',    desc:'Männlich · Jung',     lang:'de-DE', gender:'male' },
+  { emoji:'👩‍🦰', name:'Elena',     desc:'Weiblich · Sanft',    lang:'de-DE', gender:'female' },
+  { emoji:'🧑', name:'Adam',       desc:'Männlich · Neutral',  lang:'de-DE', gender:'male' },
+  { emoji:'👩‍🦱', name:'Bella',     desc:'Weiblich · Hell',     lang:'de-DE', gender:'female' },
+  { emoji:'🤖', name:'Computer',   desc:'Roboter',              lang:'en-US', gender:'male', fallback:true },
+  { emoji:'🌍', name:'Multi',      desc:'Auto nach Sprache',    lang:'auto',  gender:'auto' },
+];
+
+// ---- Anna's Archive ----
+const AA_API = '/api';
+let aaCurrentPage = 1;
+let aaCurrentQuery = '';
+let aaCurrentResults = [];
+
+// v10: cancel any in-flight AA search so rapid typing doesn't get stale
+// results painted over fresh ones (or hide fresh results behind a slow older fetch)
+let _aaAbort = null;
+
+async function searchAnnaArchive(page = 1) {
+  const q = document.getElementById('aa-search-input').value.trim();
+  if (!q) { showToast('Bitte Suchbegriff eingeben', 'error'); return; }
+  aaCurrentQuery = q;
+  aaCurrentPage = page;
+  const el = document.getElementById('aa-results');
+
+  // Cancel previous search (if still in flight)
+  if (_aaAbort) { try { _aaAbort.abort(); } catch(e){} }
+  _aaAbort = new AbortController();
+
+  el.innerHTML = `<div class="aa-loading"><div class="spinner"></div> Suche "${escapeHtml(q)}"...</div>`;
+
+  try {
+    const r = await fetch(`${AA_API}/search?q=${encodeURIComponent(q)}&page=${page}`, { signal: _aaAbort.signal });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({error: 'Unbekannter Fehler'}));
+      el.innerHTML = `<div class="aa-empty">⚠ ${escapeHtml(err.error || 'Suche fehlgeschlagen')}</div>`;
+      return;
+    }
+    const data = await r.json();
+    aaCurrentResults = data.results || [];
+    renderAaResults(data);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    el.innerHTML = `<div class="aa-empty">⚠ Server nicht erreichbar: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderAaResults(data) {
+  const el = document.getElementById('aa-results');
+  if (!data.results || !data.results.length) {
+    el.innerHTML = `<div class="aa-empty">Keine Ergebnisse für "${escapeHtml(data.query)}"</div>`;
+    return;
+  }
+  let html = '';
+  data.results.forEach(r => {
+    const author = r.authors && r.authors.length ? escapeHtml(r.authors.join(', ')) + ' · ' : '';
+    const coverHtml = r.cover
+      ? `<img src="${AA_API}/cover?url=${encodeURIComponent(r.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div style=\\'font-size:1.1rem;display:flex;align-items:center;justify-content:center;width:100%;height:100%\\'>📖</div>'">`
+      : '📖';
+    html += `
+      <div class="aa-result" onclick="showBookDetail('${r.id}')">
+        <div class="aa-result-thumb">${coverHtml}</div>
+        <div class="aa-result-info">
+          <div class="aa-result-title">${escapeHtml(r.title)}</div>
+          <div class="aa-result-id">${author}Anna's Archive</div>
+        </div>
+      </div>`;
+  });
+  if (data.results.length >= 20) {
+    html += `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:.7rem;">
+      <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 10px"
+        data-tip="Seite ${Math.max(1, data.page-1)}"
+        onclick="searchAnnaArchive(${data.page-1})"
+        ${data.page <= 1 ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''}>‹ Zurück</button>
+      <span style="color:var(--text3)">Seite ${data.page}</span>
+      <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 10px"
+        data-tip="Seite ${data.page+1}"
+        onclick="searchAnnaArchive(${data.page+1})">Weiter ›</button>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+async function showBookDetail(bookId) {
+  let modal = document.getElementById('aa-modal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'aa-modal';
+  modal.className = 'aa-modal-backdrop';
+  modal.onclick = (e) => { if (e.target === modal) closeAaModal(); };
+  modal.innerHTML = `<div class="aa-modal" onclick="event.stopPropagation()">
+    <div class="aa-modal-body" style="justify-content:center;padding:40px"><div class="spinner"></div></div>
+  </div>`;
+  document.body.appendChild(modal);
+  document.addEventListener('keydown', escClose);
+
+  try {
+    const r = await fetch(`${AA_API}/book/${bookId}`);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      modal.querySelector('.aa-modal').innerHTML = `
+        <div class="aa-modal-header"><h2>Fehler</h2><button class="aa-modal-close" onclick="closeAaModal()">×</button></div>
+        <div class="aa-modal-body">${escapeHtml(err.error || 'Buch nicht gefunden')}</div>`;
+      return;
+    }
+    const book = await r.json();
+    // Merge in data from the search result (author/year/isbn) if not already present
+    const fromSearch = aaCurrentResults.find(x => x.id === bookId);
+    if (fromSearch) {
+      if (!book.authors || !book.authors.length) book.authors = fromSearch.authors || [];
+      if (!book.year && fromSearch.year) book.year = fromSearch.year;
+      if (!book.isbn && fromSearch.isbn) book.isbn = fromSearch.isbn;
+      if (!book.language && fromSearch.language) book.language = fromSearch.language;
+    }
+    renderBookDetail(book);
+  } catch (e) {
+    modal.querySelector('.aa-modal').innerHTML = `
+      <div class="aa-modal-header"><h2>Verbindungsfehler</h2><button class="aa-modal-close" onclick="closeAaModal()">×</button></div>
+      <div class="aa-modal-body">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderBookDetail(book) {
+  const modal = document.getElementById('aa-modal');
+  if (!modal) return;
+  const coverHtml = book.cover
+    ? `<img src="${AA_API}/cover?url=${encodeURIComponent(book.cover)}" alt="${escapeAttr(book.title)}" onerror="this.outerHTML='<div class=\\'no-cover\\'>📚</div>'">`
+    : `<div class="no-cover">📚</div>`;
+
+  const metaRows = [
+    ['Autor(en)', (book.authors || []).join(', ') || '—'],
+    ['Format', book.format || '—'],
+    ['Datei', book.filename ? escapeHtml(book.filename) : '—'],
+    ['Größe', book.filesize_bytes ? (book.filesize_bytes / 1024 / 1024).toFixed(1) + ' MB' : '—'],
+    ['Jahr', book.year || '—'],
+    ['Sprache', book.language || '—'],
+    ['ISBN', book.isbn || '—'],
+  ];
+
+  const metaHtml = metaRows.map(([l, v]) => `
+    <div class="aa-meta-row">
+      <span class="aa-meta-label">${l}</span>
+      <span class="aa-meta-value">${escapeHtml(String(v))}</span>
+    </div>`).join('');
+
+  const catsHtml = book.categories.length
+    ? `<div class="aa-cats">${book.categories.map(c => `<span class="aa-cat">${escapeHtml(c)}</span>`).join('')}</div>` : '';
+
+  const serversHtml = book.download_servers.length ? `
+    <div class="aa-servers">
+      <h4>Verfügbare Server (Login erforderlich)</h4>
+      <div class="aa-server-list">${book.download_servers.map(s => `<span class="aa-server">${escapeHtml(s.host)}</span>`).join('')}</div>
+    </div>` : '';
+
+  const loginNotice = book.login_required ? `
+    <div class="aa-login-notice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Download via Anna's Archive (kostenloser Account). Lade die Datei dort herunter und lade sie dann oben als PDF/TXT in ReaderPlus hoch.
+    </div>` : '';
+
+  modal.innerHTML = `
+    <div class="aa-modal" onclick="event.stopPropagation()">
+      <div class="aa-modal-header">
+        <h2>${escapeHtml(book.title)}</h2>
+        <button class="aa-modal-close" onclick="closeAaModal()" title="Schließen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="aa-modal-body">
+        <div class="aa-modal-cover">${coverHtml}</div>
+        <div class="aa-modal-info">${metaHtml}</div>
+      </div>
+      ${catsHtml}
+      ${loginNotice}
+      ${serversHtml}
+      ${book.description ? `<div class="aa-modal-desc"><h4>Beschreibung</h4>${escapeHtml(book.description)}</div>` : ''}
+      <div class="aa-modal-actions">
+        <a href="${safeUrl(book.source_url)}" target="_blank" rel="noopener" class="btn btn-ghost">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Auf Anna's Archive öffnen
+        </a>
+        <button class="btn btn-ghost" onclick="bookCopyCitation()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Zitieren
+        </button>
+      </div>
+    </div>`;
+}
+
+function bookCopyCitation() {
+  const modal = document.getElementById('aa-modal');
+  if (!modal) return;
+  const title = modal.querySelector('h2')?.textContent || '';
+  const meta = [...modal.querySelectorAll('.aa-meta-row')].map(r => r.textContent.trim()).join(' · ');
+  const citation = `${title} — ${meta}\nQuelle: Anna's Archive`;
+  navigator.clipboard.writeText(citation).then(() => showToast('In Zwischenablage kopiert', 'success'));
+}
+
+function closeAaModal() {
+  const modal = document.getElementById('aa-modal');
+  if (modal) modal.remove();
+  document.removeEventListener('keydown', escClose);
+}
+
+function escClose(e) { if (e.key === 'Escape') closeAaModal(); }
+
+function escapeAttr(s) { return String(s).replace(/'/g, "&#39;").replace(/"/g, "&quot;"); }
+
+// v9: whitelist https/http URLs only — blocks javascript:, data:, vbscript: etc.
+function safeUrl(s) {
+  const u = String(s || '').trim();
+  if (!u) return 'about:blank';
+  try {
+    const parsed = new URL(u, window.location.origin);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.href;
+    }
+  } catch (_) { /* fall through */ }
+  return 'about:blank';
+}
+
+// ---- Init ----
+async function init() {
+  // Load pdf.js worker
+  try {
+    const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+    window.pdfjsLib = pdfjsLib;
+  } catch(e) {
+    console.warn('pdf.js failed to load:', e);
+  }
+
+  // Load browser voices (for the legacy engine)
+  await loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+
+  // Restore previously-selected Piper voice from storage BEFORE rendering
+  // (so the active class lands on the right card on first paint)
+  const savedPiperVoice = localStorage.getItem('rp_piper_voice');
+  if (savedPiperVoice) selectedPiperVoice = savedPiperVoice;
+
+  // Load Piper (server CPU TTS) voices
+  await loadPiperVoices();
+
+  // Restore engine from storage and apply UI
+  let savedEngine = localStorage.getItem('rp_engine') || 'piper';
+  // Migrate: any pre-Piper users get bumped to Piper (better default)
+  if (!localStorage.getItem('rp_engine')) localStorage.setItem('rp_engine', 'piper');
+  if (savedEngine === 'browser' || savedEngine === 'piper') {
+    // Reset state and UI to match saved choice
+    document.querySelectorAll('.engine-tab').forEach(t => t.classList.toggle('active', t.dataset.engine === savedEngine));
+    document.getElementById('voice-presets').style.display = savedEngine === 'browser' ? '' : 'none';
+    document.getElementById('piper-voices').style.display = savedEngine === 'piper' ? '' : 'none';
+    const browserSettings = document.getElementById('browser-only-settings');
+    if (browserSettings) {
+      browserSettings.querySelectorAll('.setting-card').forEach((card, i) => {
+        if (savedEngine === 'piper') {
+          card.style.display = (i === 0 || i === 2) ? 'none' : '';
+        } else {
+          card.style.display = '';
+        }
+      });
+    }
+    currentEngine = savedEngine;
+  }
+
+  // Render presets
+  renderVoicePresets();
+  renderLibrary();
+
+  // v9: hide Reader nav-item until reader view is opened
+  // (was always visible before, despite inline display:none on the button —
+  //  since we removed that inline style, we have to start hidden via JS)
+  document.getElementById('nav-reader').style.display = 'none';
+
+  // Setup drag & drop
+  setupDragDrop();
+
+  // Close sidebar on mobile when clicking main
+  document.querySelector('.main').addEventListener('click', closeSidebar);
+
+  // Update char count
+  updateCharCount();
+
+  // Restore theme
+  const savedTheme = localStorage.getItem('rp_theme') || '';
+  if (savedTheme) {
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  }
+  document.querySelectorAll('.theme-toggle-btn').forEach(b => {
+    b.style.borderColor = (b.dataset.themeVal || '') === savedTheme ? 'var(--accent)' : 'var(--border2)';
+  });
+
+  // Restore speed slider from localStorage and apply preset highlight
+  const savedRate = localStorage.getItem('rp_rate');
+  if (savedRate) {
+    document.getElementById('rate-slider').value = savedRate;
+    updateRateLabel();
+  }
+  const currentRate = parseFloat(document.getElementById('rate-slider').value);
+  document.querySelectorAll('.speed-preset').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === currentRate);
+  });
+}
+
+// ---- Voice Loading ----
+async function loadVoices() {
+  // Browser voices (fallback)
+  voices = await new Promise(res => {
+    let v = speechSynthesis.getVoices();
+    if (v.length) return res(v);
+    speechSynthesis.onvoiceschanged = () => res(speechSynthesis.getVoices());
+    setTimeout(() => res(speechSynthesis.getVoices()), 1000);
+  });
+  populateVoiceSelect();
+}
+
+async function loadPiperVoices() {
+  try {
+    const r = await fetch('/api/voices');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    piperVoices = d.voices || [];
+    renderPiperVoiceCards();
+  } catch (e) {
+    console.warn('Could not load Piper voices (server maybe offline):', e);
+    piperVoices = [];
+    document.getElementById('piper-voices').innerHTML =
+      '<div style="color:var(--text3);font-size:.78rem;padding:8px">⚠ Server nicht erreichbar: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderPiperVoiceCards() {
+  const container = document.getElementById('piper-voices');
+  container.innerHTML = '';
+  piperVoices.forEach(v => {
+    const el = document.createElement('div');
+    el.className = 'voice-preset' + (v.id === selectedPiperVoice ? ' active' : '');
+    el.dataset.voiceId = v.id;
+    const emoji = v.gender === 'female' ? '👩' : v.gender === 'male' ? '👨' : '🧑';
+    el.innerHTML = `
+      <span class="vp-emoji">${emoji}</span>
+      <div>
+        <div class="vp-name">${escapeHtml(v.name)}</div>
+        <div class="vp-desc">${escapeHtml(v.lang)} · ${v.size_mb} MB · CPU</div>
+      </div>
+    `;
+    el.onclick = () => selectPiperVoice(v.id);
+    container.appendChild(el);
+  });
+}
+
+function selectPiperVoice(id) {
+  selectedPiperVoice = id;
+  localStorage.setItem('rp_piper_voice', id);
+  document.querySelectorAll('#piper-voices .voice-preset').forEach(el => {
+    el.classList.toggle('active', el.dataset.voiceId === id);
+  });
+  // Also clear any active browser preset
+  document.querySelectorAll('#voice-presets .voice-preset').forEach(el => el.classList.remove('active'));
+  // Show toast feedback (was silent)
+  const v = piperVoices.find(x => x.id === id);
+  if (v) showToast(`🧠 ${v.name} aktiv`, 'success');
+}
+
+function setEngine(engine) {
+  if (engine === currentEngine) return;
+  if (isPlaying) stopReading();
+  currentEngine = engine;
+  document.querySelectorAll('.engine-tab').forEach(t => t.classList.toggle('active', t.dataset.engine === engine));
+  document.getElementById('voice-presets').style.display = engine === 'browser' ? '' : 'none';
+  document.getElementById('piper-voices').style.display = engine === 'piper' ? '' : 'none';
+  const browserSettings = document.getElementById('browser-only-settings');
+  if (browserSettings) {
+    browserSettings.querySelectorAll('.setting-card').forEach((card, i) => {
+      if (engine === 'piper') {
+        card.style.display = (i === 0 || i === 2) ? 'none' : '';
+      } else {
+        card.style.display = '';
+      }
+    });
+  }
+  // When switching to piper, restore the active class on the selected piper
+  // voice card (was rendered correctly on init but loses visual focus otherwise)
+  if (engine === 'piper') {
+    document.querySelectorAll('#piper-voices .voice-preset').forEach(el => {
+      el.classList.toggle('active', el.dataset.voiceId === selectedPiperVoice);
+    });
+    document.querySelectorAll('#voice-presets .voice-preset').forEach(el => el.classList.remove('active'));
+  }
+  // When switching to browser, ensure the active piper class is cleared
+  // (already handled above, but also defensively clear Piper)
+  if (engine === 'browser') {
+    document.querySelectorAll('#piper-voices .voice-preset').forEach(el => el.classList.remove('active'));
+  }
+  localStorage.setItem('rp_engine', engine);
+  showToast(engine === 'piper' ? '🧠 Server-Stimme aktiv (Piper · CPU)' : '🌐 Browser-Stimme aktiv', 'info');
+}
+
+function populateVoiceSelect() {
+  const select = document.getElementById('voice-select');
+  select.innerHTML = '';
+  const sorted = [...voices].sort((a,b) => {
+    // German voices first
+    const aDe = a.lang.startsWith('de');
+    const bDe = b.lang.startsWith('de');
+    if (aDe && !bDe) return -1;
+    if (!aDe && bDe) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  sorted.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.voiceURI;
+    opt.textContent = `${v.name} (${v.lang})`;
+    select.appendChild(opt);
+  });
+  // Default: first German voice
+  const deVoice = sorted.find(v => v.lang.startsWith('de'));
+  if (deVoice) select.value = deVoice.voiceURI;
+}
+
+// ---- Voice Presets ----
+function renderVoicePresets() {
+  const container = document.getElementById('voice-presets');
+  container.innerHTML = '';
+  VOICE_PRESETS.forEach((preset, idx) => {
+    const el = document.createElement('div');
+    el.className = 'voice-preset';
+    el.dataset.idx = idx;
+    el.innerHTML = `
+      <span class="vp-emoji">${preset.emoji}</span>
+      <div>
+        <div class="vp-name">${preset.name}</div>
+        <div class="vp-desc">${preset.desc}</div>
+      </div>
+    `;
+    el.onclick = () => selectVoicePreset(idx);
+    container.appendChild(el);
+  });
+  // Restore previously-selected preset, default to first
+  const saved = parseInt(localStorage.getItem('rp_browser_preset') || '0', 10);
+  const idx = (saved >= 0 && saved < VOICE_PRESETS.length) ? saved : 0;
+  selectVoicePreset(idx);
+}
+
+function selectVoicePreset(idx) {
+  document.querySelectorAll('#voice-presets .voice-preset').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+  const preset = VOICE_PRESETS[idx];
+  localStorage.setItem('rp_browser_preset', String(idx));
+
+  // Try to match a browser voice
+  const matched = matchPresetToVoice(preset);
+  if (matched) {
+    document.getElementById('voice-select').value = matched.voiceURI;
+    showToast(`Stimme: ${preset.name}`, 'success');
+  } else if (preset.fallback) {
+    // Use first available English voice
+    const en = voices.find(v => v.lang.startsWith('en'));
+    if (en) document.getElementById('voice-select').value = en.voiceURI;
+  }
+
+  window._currentPreset = preset;
+}
+
+function matchPresetToVoice(preset) {
+  if (preset.lang === 'auto') return null;
+  // Find voices matching the language
+  const langVoices = voices.filter(v => v.lang.startsWith(preset.lang.split('-')[0]));
+  if (!langVoices.length) return null;
+
+  // Try to find gender match (based on name heuristics)
+  const femaleNames = ['Anna','Marlene','Katja','Helena','Elena','Bella','Victoria','Amelie','Google Deutsch','Samantha','Zira','Hedda','Petra','Nicole','Greta'];
+  const maleNames = ['Mark','Daniel','Jacob','Dustin','Adam','Hans','Alex','Thomas','Sebastian','Klaus','Microsoft'];
+  let matched;
+  if (preset.gender === 'female') {
+    matched = langVoices.find(v => femaleNames.some(n => v.name.includes(n)));
+    if (!matched) matched = langVoices.find(v => !maleNames.some(n => v.name.includes(n)));
+  } else if (preset.gender === 'male') {
+    matched = langVoices.find(v => maleNames.some(n => v.name.includes(n)));
+    if (!matched) matched = langVoices.find(v => !femaleNames.some(n => v.name.includes(n)));
+  }
+  return matched || langVoices[0];
+}
+
+// ---- Settings ----
+function updateRateLabel() {
+  const val = parseFloat(document.getElementById('rate-slider').value);
+  document.getElementById('rate-value').textContent = val.toFixed(1) + '×';
+  // v9: sync the active speed-preset chip too (was only in setRate() — slider drag had no feedback)
+  document.querySelectorAll('.speed-preset').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === val);
+  });
+  // Also persist so next page load remembers the rate
+  localStorage.setItem('rp_rate', document.getElementById('rate-slider').value);
+}
+function updatePitchLabel() {
+  document.getElementById('pitch-value').textContent = parseFloat(document.getElementById('pitch-slider').value).toFixed(1);
+}
+function updateVolLabel() {
+  document.getElementById('vol-value').textContent = Math.round(document.getElementById('vol-slider').value * 100) + '%';
+}
+function onVoiceChange() {
+  // Deactivate browser-voice presets when manually selecting (don't touch Piper presets)
+  document.querySelectorAll('#voice-presets .voice-preset').forEach(el => el.classList.remove('active'));
+}
+
+// ---- Char Count ----
+function updateCharCount() {
+  const text = document.getElementById('text-input').value;
+  const chars = text.length;
+  const words = chars > 0 ? text.trim().split(/\s+/).length : 0;
+  const mins = Math.ceil(words / 150); // ~150 WPM average
+  document.getElementById('char-count').textContent = `${chars.toLocaleString()} Zeichen`;
+  document.getElementById('word-count').textContent = `${words} Wörter · ~${mins} Min`;
+}
+
+// ---- File Upload (PDF / TXT) ----
+async function handleFileUpload(event) {
+  const input = event.target;
+  const file = input.files[0];
+  if (!file) return;
+  currentTitle = file.name.replace(/\.[^.]+$/, '');
+
+  // v10: size cap of 25 MB to avoid choking on huge files; reset input so
+  // the same file can be re-uploaded later (onchange wouldn't otherwise fire)
+  const MAX_FILE_BYTES = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_BYTES) {
+    showToast(`⚠ Datei zu groß (${(file.size/1024/1024).toFixed(1)} MB, max 25 MB)`, 'error');
+    input.value = '';
+    return;
+  }
+
+  try {
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      showToast('PDF wird verarbeitet...', 'success');
+      const text = await extractPdfText(file);
+      document.getElementById('text-input').value = text;
+      updateCharCount();
+      showToast(`PDF geladen: ${text.length} Zeichen`, 'success');
+    } else {
+      // TXT or MD
+      const text = await file.text();
+      document.getElementById('text-input').value = text;
+      updateCharCount();
+      showToast(`Datei geladen: ${text.length} Zeichen`, 'success');
+    }
+  } catch(e) {
+    showToast('Fehler beim Lesen: ' + e.message, 'error');
+  } finally {
+    input.value = '';
+  }
+}
+
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) throw new Error('pdf.js nicht geladen');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str).join(' ');
+    fullText += strings + '\n\n';
+  }
+  return fullText.trim();
+}
+
+// ---- Drag & Drop ----
+function setupDragDrop() {
+  const zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', async e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.name.match(/\.(pdf|txt|md|markdown)$/i)) {
+      showToast('Nur PDF, TXT oder MD-Dateien', 'error');
+      return;
+    }
+    const fakeEvent = { target: { files: [file] } };
+    await handleFileUpload(fakeEvent);
+  });
+}
+
+// ---- Text Splitting (Sentences) ----
+function splitIntoSentences(text) {
+  // Normalize whitespace
+  text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  // v11: mask dots inside common German abbreviations so the splitter
+  // below doesn't break "Dr.", "z.B.", "usw.", "u.a.", "Nr.", etc. into
+  // fake sentence ends (which would make TTS read them as separate
+  // utterances and desync the per-sentence highlight/scroll).
+  // Also handles multi-dot forms like "p.m." and "a.m." by masking ALL
+  // dots within the matched abbreviation.
+  // \x1F (unit separator) is extremely unlikely to appear in normal text.
+  const ABBR = /\b(Mr|Mrs|Ms|Dr|Prof|Dipl|Ing|jr|sr|St|ca|z\.B|u\.a|usw|Nr|Tel|Fax|etc|ggf|bzw|vgl|gem|Abs|Art|Abb|Aufl|Bd|Beschl|S|Sp|Tab|Teil|z\.H|z\.T|p\.m|a\.m)\./g;
+  text = text.replace(ABBR, m => m.replace(/\./g, '\x1F'));
+  // Split on sentence-ending punctuation followed by whitespace
+  // (standard sentence splitter; the result is usually clean).
+  let parts = text.split(/(?<=[.!?…:])\s+/);
+  // v11: restore masked dots so TTS reads "Dr." properly.
+  parts = parts.map(p => p.replace(/\x1F/g, '.'));
+  // Glue an orphan opening QUOTE at the start of a sentence to the END of
+  // the previous one — this prevents TTS from reading dangling " or \u201e
+  // as a fresh sentence and improves rhythm on quoted German dialogue.
+  // Parens stay with their content as natural sentence breaks.
+  const out = [];
+  for (const p of parts) {
+    if (!out.length) { out.push(p); continue; }
+    const openerMatch = p.match(/^\s*(["\u201e\u201f\u201c\u201d]+)/);
+    if (openerMatch) {
+      out[out.length - 1] = out[out.length - 1] + openerMatch[1];
+      out.push(p.slice(openerMatch[1].length));
+    } else {
+      out.push(p);
+    }
+  }
+  return out.map(s => s.trim()).filter(s => s.length > 0);
+}
+
+// ---- Start Reading ----
+function startReading() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) {
+    showToast('Bitte Text eingeben oder hochladen', 'error');
+    return;
+  }
+  if (currentEngine === 'browser' && voices.length === 0) {
+    showToast('Keine Stimmen verfügbar (Browser unterstützt Web Speech API nicht)', 'error');
+    return;
+  }
+  if (currentEngine === 'piper' && piperVoices.length === 0) {
+    showToast('Keine Piper-Stimmen geladen (Server erreichbar?)', 'error');
+    return;
+  }
+
+  // Split into sentences
+  sentences = splitIntoSentences(text);
+  currentSentIdx = 0;
+  bookmarks = [];
+  // v10: pre-compute total word count so updateProgress() doesn't rebuild
+  // a joined string on every sentence highlight (O(N²) → O(N) overall)
+  setTotalWords(text.trim().split(/\s+/).length);
+
+  // Show reader view
+  showReader();
+  renderReader();
+  renderBookmarks();
+
+  // Show player
+  document.getElementById('player').classList.add('visible');
+  document.getElementById('btn-save').style.display = 'inline-flex';
+
+  // Start playback
+  speakSentence(0);
+}
+
+// ---- Show/Hide Views ----
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  sb.classList.toggle('open');
+  bd.classList.toggle('visible', sb.classList.contains('open'));
+}
+function closeSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  if (!sb.classList.contains('open')) return;
+  sb.classList.remove('open');
+  bd.classList.remove('visible');
+}
+function showEditor() {
+  document.getElementById('editor-view').classList.remove('hidden');
+  document.getElementById('reader-view').classList.add('hidden');
+  document.getElementById('page-title').textContent = 'Neuer Text';
+  document.getElementById('page-subtitle').textContent = 'PDF hochladen oder Text einfügen und vorlesen lassen';
+  document.getElementById('player').classList.remove('visible');
+  document.getElementById('btn-save').style.display = 'none';
+  document.getElementById('nav-new').classList.add('active');
+  document.getElementById('nav-reader').classList.remove('active');
+  // v9: hide Reader nav-item until reader view is active (was hidden always = bug)
+  document.getElementById('nav-reader').style.display = 'none';
+  stopReading();
+}
+
+function showReader() {
+  document.getElementById('editor-view').classList.add('hidden');
+  document.getElementById('reader-view').classList.remove('hidden');
+  document.getElementById('page-title').textContent = currentTitle || 'Reader';
+  // v9: reveal Reader nav-item now that reader view is shown (was hidden always = bug)
+  document.getElementById('nav-reader').style.display = '';
+  // Subtitle reflects the actually-active engine + voice name (was hardcoded
+  // to browser voices count, which is misleading when running Piper)
+  let engineInfo;
+  if (currentEngine === 'piper') {
+    const pv = piperVoices.find(v => v.id === selectedPiperVoice);
+    const vName = pv ? pv.name : 'Standard';
+    engineInfo = `🧠 ${vName} · Piper`;
+  } else {
+    engineInfo = `🌐 Browser${voices.length ? ' · ' + voices.length + ' Stimme(n)' : ' · keine Stimmen'}`;
+  }
+  document.getElementById('page-subtitle').textContent =
+    `${sentences.length} Sätze · ${engineInfo}`;
+  document.getElementById('player').classList.add('visible');
+  document.getElementById('btn-save').style.display = 'inline-flex';
+  document.getElementById('nav-new').classList.remove('active');
+  document.getElementById('nav-reader').classList.add('active');
+}
+
+// ---- Render Reader Text ----
+function renderReader() {
+  const container = document.getElementById('reader-text');
+  container.innerHTML = '';
+  sentences.forEach((sent, idx) => {
+    const span = document.createElement('span');
+    span.className = 'sentence';
+    span.dataset.idx = idx;
+    span.textContent = sent + ' ';
+    span.onclick = () => jumpToSentence(idx);
+    container.appendChild(span);
+  });
+  updateProgress();
+}
+
+// ---- Bookmarks ----
+function addBookmark() {
+  if (currentSentIdx < 0 || !sentences.length) return;
+  const btn = document.querySelector('[onclick="addBookmark()"]');
+  if (bookmarks.includes(currentSentIdx)) {
+    bookmarks = bookmarks.filter(b => b !== currentSentIdx);
+    showToast('Lesezeichen entfernt', 'success');
+  } else {
+    bookmarks.push(currentSentIdx);
+    showToast('Lesezeichen gesetzt bei Satz ' + (currentSentIdx + 1), 'success');
+    btn?.classList.add('bm-flash');
+    setTimeout(() => btn?.classList.remove('bm-flash'), 800);
+  }
+  renderBookmarks();
+  localStorage.setItem('rp_bookmarks', JSON.stringify(bookmarks));
+}
+
+function renderBookmarks() {
+  const bar = document.getElementById('bookmarks-bar');
+  bar.innerHTML = '';
+  if (!bookmarks.length) return;
+  const label = document.createElement('div');
+  label.className = 'bm-label';
+  label.textContent = '🔖 Lesezeichen:';
+  bar.appendChild(label);
+
+  const sorted = [...bookmarks].sort((a,b) => a-b);
+  sorted.forEach(bmIdx => {
+    const chip = document.createElement('div');
+    chip.className = 'bookmark-chip';
+    chip.dataset.bmIdx = bmIdx;
+    chip.classList.toggle('active', bmIdx === currentSentIdx);
+    const preview = sentences[bmIdx]?.substring(0, 30) || '—';
+    chip.textContent = `Satz ${bmIdx + 1}: "${preview}..."`;
+    chip.onclick = () => jumpToSentence(bmIdx);
+    bar.appendChild(chip);
+  });
+  refreshBmChipCache();
+}
+
+// v10: lightweight active-state toggle instead of rebuilding the whole
+// bookmarks bar on every sentence highlight (was O(N) DOM rebuilds per
+// sentence); now a single className change via a cached selector list.
+let __bmChipEls = [];
+function refreshBmChipCache() {
+  __bmChipEls = Array.from(document.querySelectorAll('#bookmarks-bar .bookmark-chip'));
+}
+function updateBookmarkActive() {
+  for (const el of __bmChipEls) {
+    el.classList.toggle('active', Number(el.dataset.bmIdx) === currentSentIdx);
+  }
+}
+
+// ---- Speech Synthesis ----
+function speakSentence(idx) {
+  if (!Number.isFinite(idx)) return; // v11: prevent infinite recursion
+  if (idx < 0 || idx >= sentences.length) {
+    stopReading();
+    showToast('Vorlesen beendet', 'success');
+    return;
+  }
+  if (currentEngine === 'piper') {
+    speakSentencePiper(idx);
+  } else {
+    speakSentenceBrowser(idx);
+  }
+}
+
+function speakSentenceBrowser(idx) {
+  // Cancel any ongoing speech
+  speechSynthesis.cancel();
+  currentSentIdx = idx;
+  const text = sentences[idx];
+  const utter = new SpeechSynthesisUtterance(text);
+  const selectedVoice = voices.find(v => v.voiceURI === document.getElementById('voice-select').value);
+  if (selectedVoice) {
+    utter.voice = selectedVoice;
+    utter.lang = selectedVoice.lang;
+  }
+  utter.rate = parseFloat(document.getElementById('rate-slider').value);
+  utter.pitch = parseFloat(document.getElementById('pitch-slider').value);
+  utter.volume = parseFloat(document.getElementById('vol-slider').value);
+
+  utter.onstart = () => {
+    isPlaying = true; isPaused = false;
+    updatePlayIcon(); highlightSentence(idx); updateProgress();
+    updateNowPlaying(selectedVoice);
+  };
+  utter.onend = () => {
+    if (isPlaying && !isPaused) speakSentence(idx + 1);
+  };
+  utter.onerror = (e) => {
+    if (e.error !== 'interrupted' && e.error !== 'canceled') {
+      console.warn('Speech error:', e);
+      if (isPlaying) speakSentence(idx + 1);
+    }
+  };
+  currentUtterance = utter;
+  speechSynthesis.speak(utter);
+}
+
+let piperActive = null; // sentence idx currently being fetched/playing
+
+function speakSentencePiper(idx) {
+  const audio = document.getElementById('piper-audio');
+  const text = sentences[idx];
+  if (!text || !text.trim()) {
+    // Skip empty sentences
+    if (isPlaying && !isPaused) speakSentence(idx + 1);
+    return;
+  }
+  // Browser rate slider (1.0=normal, 2.0=2x faster). Piper length_scale: lower=faster.
+  // So we invert: rate=2.0 -> length_scale=0.5, rate=0.5 -> length_scale=2.0
+  const rate = parseFloat(document.getElementById('rate-slider').value) || 1.0;
+  const lengthScale = Math.max(0.5, Math.min(2.0, 1.0 / rate));
+  currentSentIdx = idx;
+  piperActive = idx;
+  highlightSentence(idx);
+  updateProgress();
+  const selected = piperVoices.find(v => v.id === selectedPiperVoice) || {id: selectedPiperVoice, name: 'Piper'};
+  updateNowPlaying({name: selected.name + ' (Piper · CPU)', lang: selected.lang || ''});
+  // Stop previous audio
+  audio.pause();
+  showTtsLoading();
+  // Fetch TTS audio
+  fetch('/api/tts', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text, voice: selectedPiperVoice, length_scale: lengthScale}),
+  })
+    .then(r => {
+      if (!r.ok) throw new Error('TTS HTTP ' + r.status);
+      return r.arrayBuffer();
+    })
+    .then(buf => {
+      hideTtsLoading();
+      if (piperActive !== idx) return; // user navigated away while we were loading
+      const blob = new Blob([buf], {type: 'audio/wav'});
+      // v10: revoke the previous object URL to free the blob memory; otherwise
+      // every sentence change would leak one until page reload
+      if (audio._lastObjUrl) { try { URL.revokeObjectURL(audio._lastObjUrl); } catch(e){} }
+      const url = URL.createObjectURL(blob);
+      audio._lastObjUrl = url;
+      audio.src = url;
+      isPlaying = true; isPaused = false;
+      updatePlayIcon();
+      return audio.play();
+    })
+    .then(() => {
+      // started fine; nothing to do
+    })
+    .catch(e => {
+      hideTtsLoading();
+      console.warn('Piper TTS error:', e);
+      showToast('⚠ TTS-Fehler: ' + e.message, 'error');
+      if (isPlaying && piperActive === idx) speakSentence(idx + 1);
+    });
+
+  audio.onended = () => {
+    if (piperActive === idx && isPlaying && !isPaused) {
+      speakSentence(idx + 1);
+    }
+  };
+  audio.onerror = () => {
+    console.warn('Audio playback error');
+    if (isPlaying && piperActive === idx) speakSentence(idx + 1);
+  };
+}
+
+// ---- Playback Controls ----
+function togglePlay() {
+  if (!sentences.length) return;
+  // v13: after stopReading() currentSentIdx is -1; restart at 0 instead of
+  // hitting speakSentence(-1) which would falsely emit "Vorlesen beendet".
+  const startIdx = (typeof currentSentIdx === 'number' && currentSentIdx >= 0) ? currentSentIdx : 0;
+  if (currentEngine === 'piper') {
+    const audio = document.getElementById('piper-audio');
+    if (isPlaying && !isPaused) {
+      audio.pause(); isPaused = true; updatePlayIcon();
+    } else if (isPaused) {
+      audio.play(); isPaused = false; updatePlayIcon();
+    } else {
+      speakSentence(startIdx);
+    }
+  } else {
+    if (isPlaying && !isPaused) {
+      speechSynthesis.pause(); isPaused = true; updatePlayIcon();
+    } else if (isPaused) {
+      speechSynthesis.resume(); isPaused = false; updatePlayIcon();
+    } else {
+      speakSentence(startIdx);
+    }
+  }
+}
+
+function stopReading() {
+  isPlaying = false; isPaused = false;
+  hideTtsLoading();
+  if (currentEngine === 'piper') {
+    const audio = document.getElementById('piper-audio');
+    audio.pause();
+    // v10: revoke blob URL before clearing src (prevents memory leak on stop)
+    if (audio._lastObjUrl) { try { URL.revokeObjectURL(audio._lastObjUrl); audio._lastObjUrl = null; } catch(e){} }
+    audio.src = '';
+    piperActive = false;
+  } else {
+    speechSynthesis.cancel();
+  }
+  currentUtterance = null;
+  // v13: reset currentSentIdx so resumeStart doesn't speak old sentence.
+  // -1 sentinel makes seekTo/jumpToSentence skip "no-op when at the same index"
+  // highlighting and cleanly re-clamp to a fresh index in startReading.
+  currentSentIdx = -1;
+  updatePlayIcon();
+  document.querySelectorAll('.sentence.active').forEach(el => el.classList.remove('active'));
+}
+
+function skipSent(delta) {
+  if (!sentences.length) return;
+  const newIdx = Math.max(0, Math.min(sentences.length - 1, currentSentIdx + delta));
+  if (isPlaying) {
+    speakSentence(newIdx);
+  } else {
+    currentSentIdx = newIdx;
+    highlightSentence(newIdx);
+    updateProgress();
+    // v10: also refresh bookmarks bar so the active chip follows the cursor
+    // (was inconsistent with seekTo/jumpToSentence which both do this)
+    updateBookmarkActive();
+  }
+}
+
+function jumpToSentence(idx) {
+  if (isPlaying) {
+    speakSentence(idx);
+  } else {
+    currentSentIdx = idx;
+    highlightSentence(idx);
+    updateProgress();
+    updateBookmarkActive();
+  }
+}
+
+// ---- Seek (Click on Progress Bar) ----
+function seekTo(event) {
+  if (!sentences.length) return;
+  const bar = document.getElementById('progress-bar');
+  const rect = bar.getBoundingClientRect();
+  const pct = (event.clientX - rect.left) / rect.width;
+  const idx = Math.floor(pct * sentences.length);
+  jumpToSentence(Math.max(0, Math.min(sentences.length - 1, idx)));
+  updateBookmarkActive();
+}
+
+// ---- Visual Updates ----
+function updatePlayIcon() {
+  const playIcon = document.getElementById('play-icon');
+  const pauseIcon = document.getElementById('pause-icon');
+  const btn = document.getElementById('play-pause-btn');
+  const wave = document.getElementById('np-wave');
+  const npIcon = document.getElementById('np-icon');
+  if (isPlaying && !isPaused) {
+    playIcon.style.display = 'none';
+    pauseIcon.style.display = '';
+    btn?.classList.add('is-playing');
+    if (wave) wave.style.display = 'inline-flex';
+    if (npIcon) npIcon.style.animation = 'npIconPulse 1.4s ease-in-out infinite';
+  } else {
+    playIcon.style.display = '';
+    pauseIcon.style.display = 'none';
+    btn?.classList.remove('is-playing');
+    if (wave) wave.style.display = 'none';
+    if (npIcon) npIcon.style.animation = 'none';
+  }
+}
+
+function highlightSentence(idx) {
+  document.querySelectorAll('.sentence.active').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`.sentence[data-idx="${idx}"]`);
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+  // v9: announce the active sentence to screen readers (was on the whole
+  // #reader-text, causing the entire essay to be re-announced on every change)
+  const status = document.getElementById('reader-status');
+  if (status && sentences[idx] != null) {
+    status.textContent = `Satz ${idx + 1} von ${sentences.length}: ${sentences[idx]}`;
+  }
+  // v10: only toggle active className, don't rebuild the whole bookmarks bar
+  // (renderBookmarks() was O(N) per sentence → jank on 5000-sentence texts)
+  updateBookmarkActive();
+}
+
+let _cachedTotalWords = 0;
+
+// v10: count the words once (in startReading) and reuse the value here
+// instead of rebuilding the whole joined string on every sentence advance.
+// Was O(N²) per audio playback for long texts.
+function setTotalWords(n) { _cachedTotalWords = n; }
+
+function updateProgress() {
+  const pct = sentences.length ? ((currentSentIdx + 1) / sentences.length) * 100 : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('current-sentence-index').textContent = `${currentSentIdx + 1} / ${sentences.length}`;
+  document.getElementById('progress-pct').textContent = Math.round(pct) + '%';
+
+  // Estimate duration (average 150 WPM at current rate)
+  const rate = parseFloat(document.getElementById('rate-slider').value);
+  const mins = (_cachedTotalWords / (150 * rate));
+  if (mins < 1) {
+    document.getElementById('total-duration').textContent = `~${Math.round(mins * 60)} Sek`;
+  } else {
+    document.getElementById('total-duration').textContent = `~${mins.toFixed(1)} Min`;
+  }
+}
+
+function updateNowPlaying(voice) {
+  document.getElementById('np-title').textContent = currentTitle || 'Unbenannt';
+  document.getElementById('np-voice').textContent = voice ? `${voice.name} (${voice.lang})` : '—';
+}
+
+// ---- Library (localStorage) ----
+function saveToLibrary() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) { showToast('Kein Text zum Speichern', 'error'); return; }
+
+  const words = text.trim().split(/\s+/).length;
+  const entry = {
+    id: Date.now().toString(),
+    title: currentTitle || `Text ${library.length + 1}`,
+    text: text,
+    words: words,
+    created: new Date().toISOString(),
+    preview: text.substring(0, 120).replace(/\n/g,' '),
+    sentenceCount: splitIntoSentences(text).length,
+  };
+
+  // Check if already exists (same title)
+  const existing = library.findIndex(e => e.title === entry.title);
+  if (existing >= 0) library[existing] = entry;
+  else library.unshift(entry);
+
+  localStorage.setItem('rp_library', JSON.stringify(library));
+  renderLibrary();
+  showToast('In Bibliothek gespeichert', 'success');
+}
+
+function renderLibrary() {
+  const list = document.getElementById('library-list');
+  if (!library.length) {
+    // v9: match the initial HTML empty state exactly (with floating .lib-icon)
+    list.innerHTML = `<div class="library-empty">
+          <span class="lib-icon">📂</span>
+          Noch keine Texte gespeichert.<br><span style="font-size:.72rem;opacity:.7">Lade ein PDF hoch oder füge Text ein.</span>
+        </div>`;
+    return;
+  }
+   list.innerHTML = '';
+  library.forEach((item, idx) => {
+    const el = document.createElement('div');
+    el.className = 'library-item' + (item.id === currentLibraryId ? ' active' : '');
+    el.dataset.id = item.id;
+    const date = new Date(item.created);
+    const dateStr = date.toLocaleDateString('de-DE', {day:'numeric',month:'short'});
+    const icon = item.title.match(/\.pdf$/i) ? '📄' : (item.title.match(/\.txt$|\.md$/i) ? '📝' : '📖');
+    el.innerHTML = `
+      <span class="li-icon">${icon}</span>
+      <div class="li-info">
+        <div class="li-title">${escapeHtml(item.title)}</div>
+        <div class="li-meta">${item.words} Wörter · ${dateStr}</div>
+      </div>
+      <button class="li-delete" onclick="event.stopPropagation(); deleteLibraryItem('${item.id}')" title="Löschen">&times;</button>
+    `;
+    el.onclick = () => loadLibraryItem(item.id);
+    list.appendChild(el);
+  });
+}
+
+function loadLibraryItem(id) {
+  const item = library.find(e => e.id === id);
+  if (!item) return;
+  currentLibraryId = id;
+  currentTitle = item.title;
+  document.getElementById('text-input').value = item.text;
+  updateCharCount();
+  renderLibrary();
+  showToast(`Geladen: ${item.title}`, 'success');
+  // Close sidebar on mobile (use closeSidebar so backdrop is also removed)
+  closeSidebar();
+  // Start reading
+  startReading();
+}
+
+function deleteLibraryItem(id) {
+  library = library.filter(e => e.id !== id);
+  localStorage.setItem('rp_library', JSON.stringify(library));
+  renderLibrary();
+  showToast('Gelöscht', 'success');
+}
+
+// ---- Audio Download ----
+async function downloadAudio() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) { showToast('Kein Text', 'error'); return; }
+
+  // Piper engine: direct MP3-free download via server
+  if (currentEngine === 'piper') {
+    const fullText = sentences.join(' ');
+    if (!fullText) { showToast('Keine Sätze', 'error'); return; }
+    showToast('🧠 Piper: rendere Audio…', 'info');
+    try {
+      const rate = parseFloat(document.getElementById('rate-slider').value) || 1.0;
+      const lengthScale = Math.max(0.5, Math.min(2.0, 1.0 / rate));
+      const r = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: fullText.substring(0, 1500), voice: selectedPiperVoice, length_scale: lengthScale}),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const buf = await r.arrayBuffer();
+      const blob = new Blob([buf], {type: 'audio/wav'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safe = (currentTitle || 'readerplus').replace(/[^a-z0-9_-]/gi, '_').substring(0, 60);
+      a.download = `${safe}_${selectedPiperVoice}.wav`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Piper-Audio heruntergeladen!', 'success');
+    } catch (e) {
+      showToast('Download-Fehler: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  // Browser engine: tab audio capture
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    showToast('Browser unterstützt Audio-Capture nicht. Verwende Chrome/Edge.', 'error');
+    return;
+  }
+
+  showToast('Wähle "Dieses Tag" für Audio-Capture...', 'success');
+
+  try {
+    // Request display media with audio
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { mediaSource: 'tab' },
+      audio: true,
+    });
+
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks.length) {
+      showToast('Kein Audio erfasst — bitte "Tab-Audio teilen" aktivieren', 'error');
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    // Stop video track (we only need audio)
+    stream.getVideoTracks().forEach(t => t.stop());
+
+    // Setup MediaRecorder
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                    : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+                    : '';
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentTitle || 'readerplus'}_audio.webm`;
+      a.click();
+      URL.revokeObjectURL(url);
+      stream.getTracks().forEach(t => t.stop());
+      showToast('Audio heruntergeladen!', 'success');
+    };
+
+    // Start recording and speaking
+    recorder.start();
+    stopReading();
+    isPlaying = true;
+
+    // Speak all sentences sequentially
+    let idx = 0;
+    const speakNext = () => {
+      if (idx >= sentences.length || !isPlaying) {
+        recorder.stop();
+        isPlaying = false;
+        return;
+      }
+      currentSentIdx = idx;
+      const utter = new SpeechSynthesisUtterance(sentences[idx]);
+      const selectedVoice = voices.find(v => v.voiceURI === document.getElementById('voice-select').value);
+      if (selectedVoice) { utter.voice = selectedVoice; utter.lang = selectedVoice.lang; }
+      utter.rate = parseFloat(document.getElementById('rate-slider').value);
+      utter.pitch = parseFloat(document.getElementById('pitch-slider').value);
+      utter.volume = parseFloat(document.getElementById('vol-slider').value);
+      highlightSentence(idx);
+      updateProgress();
+      utter.onend = () => { idx++; speakNext(); };
+      utter.onerror = () => { idx++; speakNext(); };
+      speechSynthesis.speak(utter);
+    };
+    speakNext();
+
+    showToast('Aufnahme läuft... Bitte Tab-Audio nicht stummschalten!', 'success');
+  } catch(e) {
+    console.error('Download error:', e);
+    showToast('Aufnahme abgebrochen: ' + e.message, 'error');
+  }
+}
+
+// ---- Toast ----
+function showToast(msg, type = '') {
+  const toast = document.getElementById('toast');
+  if (toast._timer) clearTimeout(toast._timer);
+  toast.innerHTML = '';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  toast.appendChild(text);
+  const close = document.createElement('span');
+  close.className = 'toast-close'; close.textContent = '×';
+  close.onclick = (e) => { e.stopPropagation(); toast.classList.remove('show'); };
+  toast.appendChild(close);
+  toast.className = 'toast show ' + type;
+  toast.onclick = () => toast.classList.remove('show');
+  toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
+}
+
+// ---- Helper ----
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- Speed Presets ----
+function setRate(val) {
+  document.getElementById('rate-slider').value = val;
+  updateRateLabel();
+  localStorage.setItem('rp_rate', String(val));
+  document.querySelectorAll('.speed-preset').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === val);
+  });
+}
+
+// ---- Theme Toggle ----
+function setTheme(theme) {
+  if (theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('rp_theme', theme);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('rp_theme', '');
+  }
+  document.querySelectorAll('.theme-toggle-btn').forEach(b => {
+    b.style.borderColor = b.dataset.themeVal === theme ? 'var(--accent)' : 'var(--border2)';
+  });
+}
+
+// ---- Keyboard Shortcuts ----
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  // Allow Shift+? for shortcuts overlay — match both layouts:
+  //   US: ? → Shift+Slash (= "/" with shiftKey) → code 'Slash'
+  //   DE: ? → Shift+ß (= "ß" with shiftKey) → code 'Minus' (keyboard scancode for ß)
+  if (e.shiftKey && (e.code === 'Slash' || (e.code === 'Minus' && e.key === '?'))) {
+    e.preventDefault(); toggleShortcuts(); return;
+  }
+  if (e.key === 'Escape') { closeShortcuts(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  switch(e.code) {
+    case 'Space': e.preventDefault(); togglePlay(); break;
+    case 'ArrowRight': skipSent(5); break;
+    case 'ArrowLeft': skipSent(-5); break;
+    case 'KeyS': stopReading(); break;
+    case 'KeyB': addBookmark(); break;
+    case 'KeyT': cycleTheme(); break;
+  }
+});
+
+function toggleShortcuts() {
+  const el = document.getElementById('shortcuts-overlay');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+function closeShortcuts() {
+  document.getElementById('shortcuts-overlay').style.display = 'none';
+}
+
+function cycleTheme() {
+  const themes = ['', 'sepia', 'light'];
+  const cur = document.documentElement.getAttribute('data-theme') || '';
+  const idx = themes.indexOf(cur);
+  const next = themes[(idx + 1) % themes.length];
+  setTheme(next);
+  showToast('🎨 Theme: ' + (next || 'Dunkel'), 'info');
+}
+
+// ---- TTS Loading Indicator ----
+function showTtsLoading() { document.getElementById('tts-loading').style.display = 'block'; }
+function hideTtsLoading() { document.getElementById('tts-loading').style.display = 'none'; }
+
+// ---- Boot ----
+init();
+
+// Scroll-to-top button visibility
+(function(){
+  const btn = document.getElementById('scroll-top-btn');
+  const reader = document.getElementById('reader-view');
+  const editor = document.getElementById('editor-view');
+  if (!btn) return;
+  function checkScroll(){
+    const target = (!reader.classList.contains('hidden')) ? reader : editor;
+    if (!target) { btn.classList.remove('visible'); return; }
+    const has = target.scrollHeight > target.clientHeight + 200;
+    const scrolled = (target.scrollTop || window.scrollY) > 400;
+    if (has && scrolled) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+  }
+  [reader, editor].forEach(el => el && el.addEventListener('scroll', checkScroll));
+  window.addEventListener('resize', checkScroll);
+  window.addEventListener('scroll', checkScroll);
+  btn.addEventListener('click', () => {
+    const target = (!reader.classList.contains('hidden')) ? reader : editor;
+    if (target) target.scrollTo({top:0, behavior:'smooth'});
+    else window.scrollTo({top:0, behavior:'smooth'});
+  });
+  setTimeout(checkScroll, 600);
+})();
+</script>
+<button class="scroll-top-btn" id="scroll-top-btn" title="Nach oben" aria-label="Nach oben scrollen">↑</button>
+</body>
+</html>
