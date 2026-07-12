@@ -1628,6 +1628,10 @@ function selectPiperVoice(id) {
 function setEngine(engine) {
   if (engine === currentEngine) return;
   if (isPlaying) stopReading();
+  // v19: always reset piperActive on engine switch (previously only triggered
+  // when isPlaying was true; paused-then-switched left a stale piperActive=N
+  // value which could confuse downstream checks).
+  piperActive = false;
   currentEngine = engine;
   document.querySelectorAll('.engine-tab').forEach(t => t.classList.toggle('active', t.dataset.engine === engine));
   document.getElementById('voice-presets').style.display = engine === 'browser' ? '' : 'none';
