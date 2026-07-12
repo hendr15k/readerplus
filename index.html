@@ -798,6 +798,36 @@ input[type=range]::-moz-range-thumb{
   text-decoration-color:var(--border2);
 }
 .aa-hint a:hover{ text-decoration-color:var(--accent); }
+/* v21: AA search history dropdown */
+.aa-history{
+  background:var(--bg2); border:1px solid var(--border2); border-radius:6px;
+  margin:6px 4px 8px; padding:6px 8px;
+}
+.aa-history-label{
+  font-size:.65rem; color:var(--text3); text-transform:uppercase; letter-spacing:.6px;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:0 2px 4px; border-bottom:1px solid var(--border);
+}
+.aa-history-clear{
+  cursor:pointer; opacity:.6; font-size:.85rem;
+}
+.aa-history-clear:hover{ opacity:1; color:var(--red); }
+.aa-history-item{
+  display:flex; align-items:center; gap:4px; padding:4px 0;
+  border-bottom:1px dashed var(--border);
+}
+.aa-history-item:last-child{ border-bottom:none; }
+.aa-history-q{
+  flex:1; font-size:.78rem; color:var(--text);
+  cursor:pointer; text-decoration:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.aa-history-q:hover{ color:var(--accent); }
+.aa-history-del{
+  cursor:pointer; opacity:.4; font-size:.85rem;
+  padding:0 4px; border-radius:3px;
+}
+.aa-history-del:hover{ opacity:1; color:var(--red); background:rgba(255,80,80,.1); }
 .aa-loading{
   display:flex; align-items:center; gap:8px; justify-content:center;
   padding:20px; color:var(--text3); font-size:.78rem;
@@ -1026,11 +1056,12 @@ input[type=range]::-moz-range-thumb{
     <div class="library-section">
       <div class="library-label">🔍 Anna's Archive</div>
       <div class="aa-search">
-        <input type="text" id="aa-search-input" class="aa-search-input" placeholder="Buch suchen..." onkeydown="if(event.key==='Enter') searchAnnaArchive()">
+        <input type="text" id="aa-search-input" class="aa-search-input" placeholder="Buch suchen..." onkeydown="if(event.key==='Enter') searchAnnaArchive()" onfocus="renderAaHistory()">
         <button class="aa-search-btn" onclick="searchAnnaArchive()" title="Suchen">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
       </div>
+      <div id="aa-history" class="aa-history" style="display:none"></div>
       <div id="aa-results" class="aa-results">
         <div class="aa-hint">
           Tipp: Suche nach Titel, Autor oder ISBN.<br>
@@ -1285,6 +1316,64 @@ let aaCurrentResults = [];
 // results painted over fresh ones (or hide fresh results behind a slow older fetch)
 let _aaAbort = null;
 
+// v21: search history (last 10 distinct queries). Persisted in localStorage so
+// re-typing the same query across sessions feels immediate.
+let aaHistory = _safeParse(localStorage.getItem('rp_aa_history'), '[]');
+function aaHistoryAdd(q) {
+  q = (q || '').trim();
+  if (!q) return;
+  // Move to front, dedupe, cap at 10
+  aaHistory = [q, ...aaHistory.filter(x => x !== q)].slice(0, 10);
+  _safeSet('rp_aa_history', JSON.stringify(aaHistory));
+  renderAaHistory();
+}
+function aaHistoryRemove(q) {
+  aaHistory = aaHistory.filter(x => x !== q);
+  _safeSet('rp_aa_history', JSON.stringify(aaHistory));
+  renderAaHistory();
+}
+function renderAaHistory() {
+  const list = document.getElementById('aa-history');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!aaHistory.length) { list.style.display = 'none'; return; }
+  list.style.display = '';
+  const label = document.createElement('div');
+  label.className = 'aa-history-label';
+  label.innerHTML = `Letzte Suchen<a class="aa-history-clear" title="Alle löschen">🗑</a>`;
+  label.querySelector('.aa-history-clear').onclick = clearAaHistory;
+  list.appendChild(label);
+  for (const q of aaHistory) {
+    const item = document.createElement('div');
+    item.className = 'aa-history-item';
+    // Build with DOM APIs (no inline onclick / no HTML interpolation) so user
+    // queries cannot break out of attributes or execute as JS.
+    const a = document.createElement('a');
+    a.className = 'aa-history-q';
+    a.title = q;
+    a.textContent = '📚 ' + q;
+    a.onclick = () => {
+      const inp = document.getElementById('aa-search-input');
+      inp.value = q;
+      searchAnnaArchive();
+    };
+    const d = document.createElement('a');
+    d.className = 'aa-history-del';
+    d.title = 'Aus Verlauf entfernen';
+    d.textContent = '×';
+    d.onclick = () => aaHistoryRemove(q);
+    item.appendChild(a);
+    item.appendChild(d);
+    list.appendChild(item);
+  }
+}
+function clearAaHistory() {
+  aaHistory = [];
+  _safeSet('rp_aa_history', JSON.stringify(aaHistory));
+  renderAaHistory();
+}
+window.addEventListener('DOMContentLoaded', renderAaHistory);
+
 async function searchAnnaArchive(page = 1) {
   const q = document.getElementById('aa-search-input').value.trim();
   if (!q) { showToast('Bitte Suchbegriff eingeben', 'error'); return; }
@@ -1295,6 +1384,9 @@ async function searchAnnaArchive(page = 1) {
   // Cancel previous search (if still in flight)
   if (_aaAbort) { try { _aaAbort.abort(); } catch(e){} }
   _aaAbort = new AbortController();
+
+  // v21: remember this query so user can quickly re-run it
+  aaHistoryAdd(q);
 
   el.innerHTML = `<div class="aa-loading"><div class="spinner"></div> Suche "${escapeHtml(q)}"...</div>`;
 
@@ -1502,6 +1594,9 @@ async function init() {
   // Load browser voices (for the legacy engine)
   await loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
+
+  // v21: render AA search history dropdown (under the search input)
+  renderAaHistory();
 
   // Restore previously-selected Piper voice from storage BEFORE rendering
   // (so the active class lands on the right card on first paint)
