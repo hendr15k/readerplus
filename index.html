@@ -1191,11 +1191,16 @@ input[type=range]::-moz-range-thumb{
     <h3>⌨️ Tastaturkürzel</h3>
     <div class="shortcut-list">
       <div class="shortcut-row"><span class="sc-label">Play / Pause</span><span class="sc-key">Leertaste</span></div>
-      <div class="shortcut-row"><span class="sc-label">5 Sätze weiter</span><span class="sc-key">→</span></div>
-      <div class="shortcut-row"><span class="sc-label">5 Sätze zurück</span><span class="sc-key">←</span></div>
+      <div class="shortcut-row"><span class="sc-label">1 Satz weiter</span><span class="sc-key">→</span></div>
+      <div class="shortcut-row"><span class="sc-label">1 Satz zurück</span><span class="sc-key">←</span></div>
+      <div class="shortcut-row"><span class="sc-label">10 Sätze weiter</span><span class="sc-key">Pg ↓</span></div>
+      <div class="shortcut-row"><span class="sc-label">10 Sätze zurück</span><span class="sc-key">Pg ↑</span></div>
+      <div class="shortcut-row"><span class="sc-label">Zum Anfang</span><span class="sc-key">Pos1</span></div>
+      <div class="shortcut-row"><span class="sc-label">Zum Ende</span><span class="sc-key">Ende</span></div>
       <div class="shortcut-row"><span class="sc-label">Stopp</span><span class="sc-key">S</span></div>
       <div class="shortcut-row"><span class="sc-label">Lesezeichen</span><span class="sc-key">B</span></div>
       <div class="shortcut-row"><span class="sc-label">Theme wechseln</span><span class="sc-key">T</span></div>
+      <div class="shortcut-row"><span class="sc-label">Editor fokussieren</span><span class="sc-key">F</span></div>
       <div class="shortcut-row"><span class="sc-label">Diese Hilfe</span><span class="sc-key">Shift + ?</span></div>
     </div>
   </div>
@@ -2629,11 +2634,16 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   switch(e.code) {
     case 'Space': e.preventDefault(); togglePlay(); break;
-    case 'ArrowRight': skipSent(5); break;
-    case 'ArrowLeft': skipSent(-5); break;
+    case 'ArrowRight': skipSent(1); break;
+    case 'ArrowLeft': skipSent(-1); break;
+    case 'PageDown': skipSent(10); break;
+    case 'PageUp': skipSent(-10); break;
     case 'KeyS': stopReading(); break;
     case 'KeyB': addBookmark(); break;
     case 'KeyT': cycleTheme(); break;
+    case 'KeyF': document.getElementById('text-input')?.focus(); break;
+    case 'Home': e.preventDefault(); jumpToSentence(0); break;
+    case 'End': e.preventDefault(); jumpToSentence(sentences.length - 1); break;
   }
 });
 
@@ -2684,6 +2694,63 @@ init();
     else window.scrollTo({top:0, behavior:'smooth'});
   });
   setTimeout(checkScroll, 600);
+})();
+
+// v17: mobile touch-swipe on reader-view → skip forward/backward
+(function(){
+  let startX = 0, startY = 0, startT = 0, tracking = false, _swipeLock = false;
+  const SWIPE_MIN = 50;
+  const SWIPE_MAX_TIME = 800;
+  const SWIPE_VERT_LIMIT = 0.7;
+
+  function onStart(e) {
+    if (_swipeLock) return;
+    if (e.touches && e.touches.length !== 1) return;
+    const t = (e.touches && e.touches[0]) || e;
+    startX = t.clientX;
+    startY = t.clientY;
+    startT = Date.now();
+    tracking = true;
+  }
+  function onEnd(e) {
+    if (!tracking) return;
+    tracking = false;
+    if (_swipeLock) return;
+    const t = (e.changedTouches && e.changedTouches[0]) || e;
+    const dx = t.clientX - startX;
+    const dy = Math.abs(t.clientY - startY);
+    const dt = Date.now() - startT;
+    if (dt > SWIPE_MAX_TIME) return;
+    if (Math.abs(dx) < SWIPE_MIN) return;
+    if (dy > Math.abs(dx) * SWIPE_VERT_LIMIT) return;
+    if (!sentences || !sentences.length) return;
+    _swipeLock = true;
+    setTimeout(() => { _swipeLock = false; }, 300);
+    if (dx < 0) skipSent(1);
+    else        skipSent(-1);
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch(_) {}
+  }
+  function onEnd(e) {
+    if (!tracking) return;
+    tracking = false;
+    const t = (e.changedTouches && e.changedTouches[0]) || e;
+    const dx = t.clientX - startX;
+    const dy = Math.abs(t.clientY - startY);
+    const dt = Date.now() - startT;
+    if (dt > SWIPE_MAX_TIME) return;
+    if (Math.abs(dx) < SWIPE_MIN) return;
+    if (dy > Math.abs(dx) * SWIPE_VERT_LIMIT) return;  // ignore vertical swipes
+    if (!sentences || !sentences.length) return;
+    if (dx < 0) skipSent(1);
+    else        skipSent(-1);
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch(_) {}
+  }
+  const reader = document.getElementById('reader-view');
+  if (reader) {
+    reader.addEventListener('touchstart', onStart, {passive:true});
+    reader.addEventListener('touchend',   onEnd,   {passive:true});
+    reader.addEventListener('touchcancel',() => { tracking = false; }, {passive:true});
+  }
 })();
 </script>
 <button class="scroll-top-btn" id="scroll-top-btn" title="Nach oben" aria-label="Nach oben scrollen">↑</button>
