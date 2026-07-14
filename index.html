@@ -641,11 +641,11 @@ input[type=range]::-moz-range-thumb{
   border:1px solid var(--border); align-items:center; justify-content:center;
 }
 /* Backdrop overlay used for the mobile sidebar */
-.sidebar-backdrop{
-  position:fixed; inset:0; background:rgba(0,0,0,.55);
+ .sidebar-backdrop{
+   position:fixed; inset:0; background:rgba(0,0,0,.55);
    backdrop-filter:blur(2px); z-index:90;
-  opacity:0; pointer-events:none; transition:opacity .25s ease;
-}
+   opacity:0; pointer-events:none; transition:opacity .25s ease;
+ }
 .sidebar-backdrop.visible{ opacity:1; pointer-events:auto; }
 @media(max-width:768px){
   .sidebar{
@@ -676,13 +676,7 @@ input[type=range]::-moz-range-thumb{
      it doesn't overlap the playback controls (player was y=700..844 = 144px
      tall; toast at bottom:90px sat inside the player) */
   .toast{ bottom:160px; }
-  /* Backdrop overlay when sidebar is open on mobile */
-  .sidebar-backdrop{
-    position:fixed; inset:0; background:rgba(0,0,0,.55);
-    backdrop-filter:blur(2px); z-index:85;
-    opacity:0; pointer-events:none; transition:opacity .25s ease;
-  }
-  .sidebar-backdrop.visible{ opacity:1; pointer-events:auto; }
+
 }
 
 /*--- Loading Spinner ---*/
@@ -1023,7 +1017,7 @@ input[type=range]::-moz-range-thumb{
 </head>
 <body>
 
-<button class="mobile-toggle" id="mobile-toggle" onclick="toggleSidebar()" aria-label="Navigation öffnen" title="Navigation">
+<button class="mobile-toggle" id="mobile-toggle" onclick="toggleSidebar()" aria-label="Navigation öffnen" aria-controls="sidebar" aria-expanded="false" title="Navigation">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
 </button>
 
@@ -2066,15 +2060,20 @@ function startReading() {
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
   const bd = document.getElementById('sidebar-backdrop');
+  const tg = document.getElementById('mobile-toggle');
   sb.classList.toggle('open');
-  bd.classList.toggle('visible', sb.classList.contains('open'));
+  const open = sb.classList.contains('open');
+  bd.classList.toggle('visible', open);
+  if (tg) tg.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 function closeSidebar() {
   const sb = document.getElementById('sidebar');
   const bd = document.getElementById('sidebar-backdrop');
+  const tg = document.getElementById('mobile-toggle');
   if (!sb.classList.contains('open')) return;
   sb.classList.remove('open');
   bd.classList.remove('visible');
+  if (tg) tg.setAttribute('aria-expanded', 'false');
 }
 function showEditor() {
   document.getElementById('editor-view').classList.remove('hidden');
@@ -2887,7 +2886,7 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && (e.code === 'Slash' || (e.code === 'Minus' && e.key === '?'))) {
     e.preventDefault(); toggleShortcuts(); return;
   }
-  if (e.key === 'Escape') { closeShortcuts(); return; }
+  if (e.key === 'Escape') { closeShortcuts(); closeSidebar(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   switch(e.code) {
     case 'Space': e.preventDefault(); togglePlay(); break;
@@ -3032,6 +3031,15 @@ init();
     reader.addEventListener('touchend',   onEnd,   {passive:true});
     reader.addEventListener('touchcancel', onCancel, {passive:true});
   }
+})();
+
+(function(){
+  const mq = window.matchMedia('(max-width: 768px)');
+  function onBreak(e){
+    if (!e.matches) closeSidebar();
+  }
+  if (mq.addEventListener) mq.addEventListener('change', onBreak);
+  else mq.addListener(onBreak);
 })();
 </script>
 <button class="scroll-top-btn" id="scroll-top-btn" title="Nach oben" aria-label="Nach oben scrollen">↑</button>
