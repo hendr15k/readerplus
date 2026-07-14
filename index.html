@@ -2195,7 +2195,9 @@ function showEditor() {
   document.getElementById('nav-new').classList.add('active');
   document.getElementById('nav-reader').classList.remove('active');
   // v9: hide Reader nav-item until reader view is active (was hidden always = bug)
-  document.getElementById('nav-reader').style.display = 'none';
+  if (!sentences || sentences.length === 0) {
+    document.getElementById('nav-reader').style.display = 'none';
+  }
   stopReading();
 }
 
