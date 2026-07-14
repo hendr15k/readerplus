@@ -386,10 +386,12 @@ def parse_book(html_text, md5):
         r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
         re.IGNORECASE)
     servers = []
+    seen_hosts = set()
     for sm in server_pat.finditer(html_text):
         url = sm.group(1)
         host = re.search(r'https?://([^/]+)', url).group(1)
-        if not any(s['host'] == host for s in servers):
+        if host not in seen_hosts:
+            seen_hosts.add(host)
             servers.append({'host': host, 'url': url, 'requires_login': True})
     out['download_servers'] = servers[:10]
     return out
