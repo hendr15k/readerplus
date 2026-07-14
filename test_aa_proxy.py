@@ -155,5 +155,69 @@ class TestParseBook(unittest.TestCase):
         self.assertEqual(result['download_servers'][0]['url'], "http://example-download.com/file")
 
 
+from aa_proxy import parse_search
+
+class TestParseSearch(unittest.TestCase):
+
+    def test_normal_result(self):
+        html = """
+        <div data-content="Title Content"></div>
+        <div data-content="John Doe"></div>
+        <span>>libgen/123/abcd.pdf<</span>
+        <a href="/md5/00000000000000000000000000000001" class="line-clamp">Normal Title</a>
+        <span>123456789X</span>
+        <span>2020</span>
+        """
+        results = parse_search(html)
+        self.assertEqual(len(results), 1)
+        r = results[0]
+        self.assertEqual(r['md5'], "00000000000000000000000000000001")
+        self.assertEqual(r['title'], "Normal Title")
+        self.assertEqual(r['authors'], ["John Doe"])
+        self.assertEqual(r['filepath'], "libgen/123/abcd.pdf")
+        self.assertEqual(r['isbn'], "123456789X")
+        self.assertEqual(r['year'], "2020")
+
+    def test_fallback_md5(self):
+        # Missing 'line-clamp' class
+        html = """
+        <a href="/md5/00000000000000000000000000000002">Fallback Title</a>
+        """
+        results = parse_search(html)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['md5'], "00000000000000000000000000000002")
+        self.assertEqual(results[0]['title'], "Fallback Title")
+
+    def test_skip_words(self):
+        html = """
+        <a href="/md5/00000000000000000000000000000003" class="line-clamp">Read Online Now</a>
+        <a href="/md5/00000000000000000000000000000004" class="line-clamp">Download Book</a>
+        <a href="/md5/00000000000000000000000000000005" class="line-clamp">Valid Title</a>
+        """
+        results = parse_search(html)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['md5'], "00000000000000000000000000000005")
+        self.assertEqual(results[0]['title'], "Valid Title")
+
+    def test_author_title_split_and_language(self):
+        html = """
+        <a href="/md5/00000000000000000000000000000006" class="line-clamp">Jane Doe - My Great Book (English)</a>
+        """
+        results = parse_search(html)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['authors'], ["Jane Doe"])
+        self.assertEqual(results[0]['title'], "My Great Book (English)")
+        self.assertEqual(results[0]['language'], "English")
+
+    def test_deduplication(self):
+        html = """
+        <a href="/md5/00000000000000000000000000000007" class="line-clamp">Dupe Title</a>
+        <a href="/md5/00000000000000000000000000000007" class="line-clamp">Dupe Title Again</a>
+        <a href="/md5/00000000000000000000000000000008" class="line-clamp">Unique Title</a>
+        """
+        results = parse_search(html)
+        self.assertEqual(len(results), 2)
+        md5s = [r['md5'] for r in results]
+        self.assertEqual(md5s, ["00000000000000000000000000000007", "00000000000000000000000000000008"])
 if __name__ == '__main__':
     unittest.main()
