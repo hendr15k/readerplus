@@ -51,6 +51,8 @@ VOICE_META = {
 
 def load_voice(voice_id):
     """Lazily load a Piper voice, thread-safe."""
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', voice_id):
+        raise ValueError("Invalid voice_id format")
     if voice_id in _voice_cache:
         return _voice_cache[voice_id]
     with _voice_lock:
