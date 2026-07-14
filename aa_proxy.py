@@ -30,6 +30,10 @@ WAIT_AFTER_LOAD = 3500
 CACHE = {}
 CACHE_TTL = 300
 
+SERVER_PAT = re.compile(
+    r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
+    re.IGNORECASE)
+
 # ---- Piper TTS ----
 VOICES_DIR = os.environ.get("VOICES_DIR", "/var/www/piper-voices")
 FRONTEND_HTML = os.environ.get("FRONTEND_HTML", "/var/www/html/readerplus.html")
@@ -382,11 +386,8 @@ def parse_book(html_text, md5):
         elif '(French)' in out['title']: out['language'] = 'French'
 
     # Download servers
-    server_pat = re.compile(
-        r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
-        re.IGNORECASE)
     servers = []
-    for sm in server_pat.finditer(html_text):
+    for sm in SERVER_PAT.finditer(html_text):
         url = sm.group(1)
         host = re.search(r'https?://([^/]+)', url).group(1)
         if not any(s['host'] == host for s in servers):
