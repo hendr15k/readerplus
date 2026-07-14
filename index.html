@@ -1872,14 +1872,16 @@ function matchPresetToVoice(preset) {
 
 // ---- Settings ----
 function updateRateLabel() {
-  const val = Math.max(0.5, Math.min(2.0, parseFloat(document.getElementById('rate-slider').value) || 1.0));
+  const slider = document.getElementById('rate-slider');
+  const val = Math.max(0.5, Math.min(2.0, parseFloat(slider.value) || 1.0));
+  slider.value = val;
   document.getElementById('rate-value').textContent = val.toFixed(1) + '×';
   // v9: sync the active speed-preset chip too (was only in setRate() — slider drag had no feedback)
   document.querySelectorAll('.speed-preset').forEach(b => {
     b.classList.toggle('active', parseFloat(b.textContent) === val);
   });
   // Also persist so next page load remembers the rate
-  _safeSet('rp_rate', document.getElementById('rate-slider').value);
+  _safeSet('rp_rate', String(val));
 }
 function updatePitchLabel() {
   document.getElementById('pitch-value').textContent = parseFloat(document.getElementById('pitch-slider').value).toFixed(1);
@@ -1904,8 +1906,8 @@ function updateCharCount() {
 
 // ---- File Upload (PDF / TXT) ----
 async function handleFileUpload(event) {
-  const input = event.target;
-  const file = input.files[0];
+  const input = event?.target;
+  const file = input?.files?.[0];
   if (!file) return;
   currentTitle = file.name.replace(/\.[^.]+$/, '');
 
@@ -2826,14 +2828,12 @@ function escapeHtml(s) {
 
 // ---- Speed Presets ----
 function setRate(val) {
-  document.getElementById('rate-slider').value = val;
+  const parsed = parseFloat(val);
+  const rate = Number.isFinite(parsed) ? Math.max(0.5, Math.min(2.0, parsed)) : 1.0;
+  document.getElementById('rate-slider').value = rate;
   updateRateLabel();
-  _safeSet('rp_rate', String(val));
   // v16: rate change invalidates Piper cache (length_scale changed → different audio)
   if (_piperCache) _piperCache.clear();
-  document.querySelectorAll('.speed-preset').forEach(b => {
-    b.classList.toggle('active', parseFloat(b.textContent) === val);
-  });
 }
 
 // ---- Theme Toggle ----
