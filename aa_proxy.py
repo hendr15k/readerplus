@@ -15,6 +15,21 @@ import wave
 import threading
 import requests as plain_requests
 from urllib.parse import quote
+import socket
+from urllib3.util import connection
+
+_local = threading.local()
+_orig_create_connection = connection.create_connection
+
+def patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, socket_options=None):
+    host, port = address
+    if hasattr(_local, 'dns_override') and host in _local.dns_override:
+        ip = _local.dns_override[host]
+        return _orig_create_connection((ip, port), timeout, source_address, socket_options)
+    return _orig_create_connection(address, timeout, source_address, socket_options)
+
+connection.create_connection = patched_create_connection
+
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -87,39 +102,43 @@ def store(key, val):
 
 def _is_private_host(hostname):
     """v14 SSRF guard: reject loopback / RFC1918 / link-local / cloud metadata.
-    Returns True when the target is considered unsafe to fetch from the proxy."""
+    Returns (is_private, safe_ip) where is_private is a boolean indicating if the target is
+    considered unsafe to fetch from the proxy, and safe_ip is the resolved IP address to use."""
     import socket
     try:
         infos = socket.getaddrinfo(hostname, None)
     except Exception:
-        return True  # DNS fail → block
+        return True, None  # DNS fail → block
+
+    ips = []
     for fam, *_rest, sockaddr in infos:
         ip = sockaddr[0]
+        ips.append(ip)
         # IPv4
         if ip.count('.') == 3:
             try:
                 parts = [int(x) for x in ip.split('.')]
                 o = parts[0]
-                if o == 10: return True                                 # 10.0.0.0/8
-                if o == 127: return True                                # 127.0.0.0/8 loopback
-                if o == 172 and 16 <= parts[1] <= 31: return True       # 172.16.0.0/12
-                if o == 192 and parts[1] == 168: return True            # 192.168.0.0/16
-                if o == 169 and parts[1] == 254: return True            # 169.254.0.0/16 link-local
-                if o == 0: return True                                  # 0.0.0.0/8
-                if o == 100 and 64 <= parts[1] <= 127: return True       # 100.64.0.0/10 CGN
-                if o == 198 and (parts[1] == 18 or parts[1] == 19): return True  # 198.18/15 benchmark
-                if o == 224: return True                                # multicast
-                if o >= 240: return True                                # reserved/broadcast
+                if o == 10: return True, None                                 # 10.0.0.0/8
+                if o == 127: return True, None                                # 127.0.0.0/8 loopback
+                if o == 172 and 16 <= parts[1] <= 31: return True, None       # 172.16.0.0/12
+                if o == 192 and parts[1] == 168: return True, None            # 192.168.0.0/16
+                if o == 169 and parts[1] == 254: return True, None            # 169.254.0.0/16 link-local
+                if o == 0: return True, None                                  # 0.0.0.0/8
+                if o == 100 and 64 <= parts[1] <= 127: return True, None       # 100.64.0.0/10 CGN
+                if o == 198 and (parts[1] == 18 or parts[1] == 19): return True, None  # 198.18/15 benchmark
+                if o == 224: return True, None                                # multicast
+                if o >= 240: return True, None                                # reserved/broadcast
             except Exception:
-                return True
+                return True, None
         # IPv6 loopback & private
         elif ':' in ip:
             lo = ip.lower()
             if lo == '::1' or lo.startswith('::ffff:127.') or lo.startswith('fe80:') \
                     or lo.startswith('fc') or lo.startswith('fd') \
                     or ip.startswith('169.254'):  # IPv4-mapped IPv6 link-local
-                return True
-    return False
+                return True, None
+    return False, ips[0] if ips else None
 
 def fetch_with_browser(url):
     with sync_playwright() as pw:
@@ -444,14 +463,21 @@ def cover_proxy():
     from urllib.parse import urlparse
     try:
         host = (urlparse(url).hostname or '').lower()
-        if not host or _is_private_host(host):
+        is_private, safe_ip = _is_private_host(host)
+        if not host or is_private or not safe_ip:
             return jsonify({'error': 'host not allowed (SSRF guard)'}), 400
     except Exception:
         return jsonify({'error': 'invalid url'}), 400
     try:
+        if not hasattr(_local, 'dns_override'):
+            _local.dns_override = {}
+        _local.dns_override[host] = safe_ip
         r = plain_requests.get(url, headers={'User-Agent': UA, 'Referer': AA_BASE}, timeout=20, stream=True, allow_redirects=False)
     except Exception as e:
         return jsonify({'error': str(e)}), 502
+    finally:
+        if hasattr(_local, 'dns_override') and host in _local.dns_override:
+            del _local.dns_override[host]
     if r.status_code != 200:
         return jsonify({'error': f'upstream {r.status_code}'}), 502
     return Response(r.content, content_type=r.headers.get('Content-Type', 'image/jpeg'),
