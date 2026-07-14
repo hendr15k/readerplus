@@ -89,36 +89,36 @@ def _is_private_host(hostname):
     """v14 SSRF guard: reject loopback / RFC1918 / link-local / cloud metadata.
     Returns True when the target is considered unsafe to fetch from the proxy."""
     import socket
+    import ipaddress
     try:
         infos = socket.getaddrinfo(hostname, None)
     except Exception:
         return True  # DNS fail → block
+
     for fam, *_rest, sockaddr in infos:
-        ip = sockaddr[0]
-        # IPv4
-        if ip.count('.') == 3:
-            try:
-                parts = [int(x) for x in ip.split('.')]
-                o = parts[0]
-                if o == 10: return True                                 # 10.0.0.0/8
-                if o == 127: return True                                # 127.0.0.0/8 loopback
-                if o == 172 and 16 <= parts[1] <= 31: return True       # 172.16.0.0/12
-                if o == 192 and parts[1] == 168: return True            # 192.168.0.0/16
-                if o == 169 and parts[1] == 254: return True            # 169.254.0.0/16 link-local
-                if o == 0: return True                                  # 0.0.0.0/8
-                if o == 100 and 64 <= parts[1] <= 127: return True       # 100.64.0.0/10 CGN
-                if o == 198 and (parts[1] == 18 or parts[1] == 19): return True  # 198.18/15 benchmark
-                if o == 224: return True                                # multicast
-                if o >= 240: return True                                # reserved/broadcast
-            except Exception:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+
+            # Normalize IPv4-mapped IPv6 addresses to IPv4
+            if ip.version == 6 and getattr(ip, 'ipv4_mapped', None):
+                ip = ip.ipv4_mapped
+
+            if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or getattr(ip, 'is_reserved', False) or ip.is_unspecified:
                 return True
-        # IPv6 loopback & private
-        elif ':' in ip:
-            lo = ip.lower()
-            if lo == '::1' or lo.startswith('::ffff:127.') or lo.startswith('fe80:') \
-                    or lo.startswith('fc') or lo.startswith('fd') \
-                    or ip.startswith('169.254'):  # IPv4-mapped IPv6 link-local
-                return True
+
+            # Additional checks for CGN and Benchmark which might not be marked as private in all python versions
+            if ip.version == 4:
+                # CGN 100.64.0.0/10
+                if 1681915904 <= int(ip) <= 1686110207:
+                    return True
+                # Benchmark 198.18.0.0/15
+                if 3323068416 <= int(ip) <= 3323199487:
+                    return True
+
+        except ValueError:
+            return True
+
     return False
 
 def fetch_with_browser(url):
