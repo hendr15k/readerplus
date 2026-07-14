@@ -57,7 +57,7 @@ body{
   font-family:'Inter',system-ui,-apple-system,sans-serif;
   background:var(--bg); color:var(--text);
   overflow:hidden;
-  height:100%; min-height:100dvh;
+  height:100dvh; min-height:100dvh;
   background-image:radial-gradient(ellipse at top right, rgba(108,92,231,.08) 0%, transparent 60%),
                      radial-gradient(ellipse at bottom left, rgba(0,206,201,.05) 0%, transparent 60%);
 }
@@ -85,7 +85,7 @@ input, textarea{ font-family:inherit; outline:none; }
 *{ scrollbar-width:thin; scrollbar-color:var(--border2) var(--bg2); }
 
 /* ===== Layout ===== */
-.app{ display:flex; height:100%; min-height:100dvh; }
+.app{ display:flex; height:100dvh; min-height:100dvh; }
 
 /*--- Sidebar ---*/
 .sidebar{
@@ -643,7 +643,7 @@ input[type=range]::-moz-range-thumb{
 /* Backdrop overlay used for the mobile sidebar */
 .sidebar-backdrop{
   position:fixed; inset:0; background:rgba(0,0,0,.55);
-  backdrop-filter:blur(2px); z-index:85;
+   backdrop-filter:blur(2px); z-index:90;
   opacity:0; pointer-events:none; transition:opacity .25s ease;
 }
 .sidebar-backdrop.visible{ opacity:1; pointer-events:auto; }
