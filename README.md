@@ -37,8 +37,25 @@ curl http://localhost:18792/api/voices              # Stimmenliste
 - `GET  /api/cover?url=...` — Cover-Image-Proxy
 - `POST /api/tts` — Piper Text-zu-WAV (`{text, voice, length_scale}`)
 
+## Reader-Tastatur-Shortcuts
+
+| Taste | Aktion |
+|-------|--------|
+| `Space` | Play / Pause |
+| `←` / `→` | Vorheriger / nächster Satz |
+| `+` / `-` | Schrift vergrößern / verkleinern |
+| `A` | Auto-Scroll an / aus |
+| `?` | Shortcut-Overlay anzeigen |
+
+Die Schriftgröße und der Auto-Scroll-Status werden in `localStorage`
+gespeichert (`rp_font_size`, `rp_auto_scroll`). Die zuletzt gespielte
+Satzposition wird pro Bibliothek-Eintrag unter `rp_progress:<id>`
+gespeichert und beim erneuten Öffnen automatisch wiederhergestellt.
+
 ## Update
 ```bash
 cd /opt/readerplus && cp -f readerplus.html /var/www/html/
 cp -f aa_proxy.py /var/www/ && systemctl restart readerplus-aa
 ```
+
+Versionshistorie siehe [CHANGELOG.md](CHANGELOG.md).
