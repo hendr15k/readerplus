@@ -93,32 +93,21 @@ def _is_private_host(hostname):
         infos = socket.getaddrinfo(hostname, None)
     except Exception:
         return True  # DNS fail → block
+    import ipaddress
     for fam, *_rest, sockaddr in infos:
         ip = sockaddr[0]
-        # IPv4
-        if ip.count('.') == 3:
-            try:
-                parts = [int(x) for x in ip.split('.')]
-                o = parts[0]
-                if o == 10: return True                                 # 10.0.0.0/8
-                if o == 127: return True                                # 127.0.0.0/8 loopback
-                if o == 172 and 16 <= parts[1] <= 31: return True       # 172.16.0.0/12
-                if o == 192 and parts[1] == 168: return True            # 192.168.0.0/16
-                if o == 169 and parts[1] == 254: return True            # 169.254.0.0/16 link-local
-                if o == 0: return True                                  # 0.0.0.0/8
-                if o == 100 and 64 <= parts[1] <= 127: return True       # 100.64.0.0/10 CGN
-                if o == 198 and (parts[1] == 18 or parts[1] == 19): return True  # 198.18/15 benchmark
-                if o == 224: return True                                # multicast
-                if o >= 240: return True                                # reserved/broadcast
-            except Exception:
-                return True
-        # IPv6 loopback & private
-        elif ':' in ip:
-            lo = ip.lower()
-            if lo == '::1' or lo.startswith('::ffff:127.') or lo.startswith('fe80:') \
-                    or lo.startswith('fc') or lo.startswith('fd') \
-                    or ip.startswith('169.254'):  # IPv4-mapped IPv6 link-local
-                return True
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+        except ValueError:
+            return True  # if it can't be parsed, block it
+
+        if ip_obj.version == 6 and ip_obj.ipv4_mapped:
+            ip_obj = ip_obj.ipv4_mapped
+
+        if (not ip_obj.is_global or ip_obj.is_multicast or ip_obj.is_unspecified or
+            ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_private or
+            ip_obj.is_reserved):
+            return True
     return False
 
 def fetch_with_browser(url):
