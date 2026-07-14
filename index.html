@@ -2500,11 +2500,13 @@ function skipSent(delta) {
 }
 
 function jumpToSentence(idx) {
+  if (!sentences.length) return;
+  const clamped = Math.max(0, Math.min(sentences.length - 1, idx));
   if (isPlaying) {
-    speakSentence(idx);
+    speakSentence(clamped);
   } else {
-    currentSentIdx = idx;
-    highlightSentence(idx);
+    currentSentIdx = clamped;
+    highlightSentence(clamped);
     updateProgress();
     updateBookmarkActive();
   }
