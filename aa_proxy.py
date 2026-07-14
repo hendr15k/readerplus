@@ -13,6 +13,7 @@ import json
 import glob
 import wave
 import threading
+from collections import OrderedDict
 import requests as plain_requests
 from urllib.parse import quote
 from flask import Flask, request, jsonify, Response, send_file
@@ -27,7 +28,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 TIMEOUT_MS = 25000
 WAIT_AFTER_LOAD = 3500
 
-CACHE = {}
+CACHE = OrderedDict()
 CACHE_TTL = 300
 
 # ---- Piper TTS ----
@@ -81,8 +82,7 @@ def cached(key):
 def store(key, val):
     CACHE[key] = {'t': time.time(), 'v': val}
     if len(CACHE) > 200:
-        oldest = min(CACHE.items(), key=lambda x: x[1]['t'])[0]
-        CACHE.pop(oldest, None)
+        CACHE.popitem(last=False)
 
 
 def _is_private_host(hostname):
