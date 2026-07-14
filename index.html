@@ -339,17 +339,38 @@ input, textarea{ font-family:inherit; outline:none; }
   display:flex; align-items:center; justify-content:center;
   font-size:.8rem; font-weight:600;
   transition:background .15s, color .15s;
+  position:relative;
 }
 .reader-toolbar-btn:hover{ background:var(--accent-soft); color:var(--text); }
 .reader-toolbar-btn.active{ background:var(--accent3); color:#fff; }
 .reader-toolbar-btn svg{ width:14px; height:14px; }
+.reader-toolbar-btn#font-inc svg{ width:16px; height:16px; }
+.reader-toolbar-btn#font-dec svg{ width:12px; height:12px; }
+.reader-toolbar-btn .badge-off{
+  position:absolute; top:-3px; right:-3px;
+  font-size:.55rem; font-weight:700;
+  background:var(--accent); color:#fff;
+  border-radius:6px; padding:1px 3px;
+  line-height:1; letter-spacing:.3px;
+  pointer-events:none;
+}
 .reader-toolbar-label{
   font-size:.7rem; color:var(--text3); padding:0 6px; font-weight:600;
   text-transform:uppercase; letter-spacing:.5px;
 }
+.reader-toolbar-size{
+  font-size:.7rem; font-weight:700;
+  color:var(--text); padding:0 4px;
+  min-width:18px; text-align:center;
+  letter-spacing:.5px;
+}
+.reader-toolbar-size-label{
+  font-size:.7rem; color:var(--text3); padding:0 4px;
+  text-transform:uppercase; letter-spacing:.5px; font-weight:600;
+}
 @media (max-width: 640px){
   .reader-toolbar{ margin:-12px -12px 12px; padding-left:12px; padding-right:12px; }
-  .reader-toolbar-label{ display:none; }
+  .reader-toolbar-label, .reader-toolbar-size-label{ display:none; }
 }
 .reader-toolbar-btn .dot-off{
   display:inline-block; width:6px; height:6px; border-radius:50%;
@@ -1209,17 +1230,20 @@ input[type=range]::-moz-range-thumb{
         <div class="reader-toolbar" id="reader-toolbar">
           <div class="reader-toolbar-group" role="group" aria-label="Schriftgröße">
             <span class="reader-toolbar-label" aria-hidden="true">A</span>
-            <button class="reader-toolbar-btn" id="font-dec" title="Schrift kleiner (A-)" aria-label="Schrift verkleinern">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span class="reader-toolbar-size-label" aria-hidden="true">Größe</span>
+            <button class="reader-toolbar-btn" id="font-dec" title="Schrift kleiner (-)" aria-label="Schrift verkleinern">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            <button class="reader-toolbar-btn" id="font-inc" title="Schrift größer (A+)" aria-label="Schrift vergrößern">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+            <span class="reader-toolbar-size" id="font-size-indicator" aria-live="polite">M</span>
+            <button class="reader-toolbar-btn" id="font-inc" title="Schrift größer (+)" aria-label="Schrift vergrößern">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
             </button>
           </div>
           <div class="reader-toolbar-group" role="group" aria-label="Auto-Scroll">
             <span class="reader-toolbar-label" aria-hidden="true">Auto</span>
-            <button class="reader-toolbar-btn" id="auto-scroll-btn" title="Auto-Scroll an/aus (S)" aria-label="Auto-Scroll umschalten" aria-pressed="true">
+            <button class="reader-toolbar-btn" id="auto-scroll-btn" title="Auto-Scroll an/aus (A)" aria-label="Auto-Scroll umschalten" aria-pressed="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              <span class="badge-off" id="auto-scroll-badge" hidden>AUS</span>
             </button>
           </div>
         </div>
@@ -2200,16 +2224,19 @@ function renderReader() {
 
 // v26: persistent reader font-size & auto-scroll preferences.
 const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
+const FONT_LABELS = {sm: 'S', md: 'M', lg: 'L', xl: 'XL'};
 function applyReaderFontSize() {
   const container = document.getElementById('reader-text');
-  if (!container) return;
-  if (!FONT_SIZES.includes(readerFontSize)) readerFontSize = 'md';
-  container.classList.remove(...FONT_SIZES.map(s => 'font-' + s));
-  container.classList.add('font-' + readerFontSize);
+  if (container) {
+    if (!FONT_SIZES.includes(readerFontSize)) readerFontSize = 'md';
+    container.classList.remove(...FONT_SIZES.map(s => 'font-' + s));
+    container.classList.add('font-' + readerFontSize);
+  }
+  const ind = document.getElementById('font-size-indicator');
+  if (ind) ind.textContent = FONT_LABELS[readerFontSize] || 'M';
 }
 function setReaderFontSize(size, opts = {}) {
   if (!FONT_SIZES.includes(size)) return;
-  // clamp so neighbors stay reachable
   readerFontSize = size;
   applyReaderFontSize();
   if (!opts.skipPersist) _safeSet('rp_reader_font', size);
@@ -2222,10 +2249,12 @@ function cycleReaderFontSize(dir) {
 function setAutoScroll(enabled, opts = {}) {
   autoScrollEnabled = !!enabled;
   const btn = document.getElementById('auto-scroll-btn');
+  const badge = document.getElementById('auto-scroll-badge');
   if (btn) {
     btn.classList.toggle('active', autoScrollEnabled);
     btn.setAttribute('aria-pressed', autoScrollEnabled ? 'true' : 'false');
   }
+  if (badge) badge.hidden = autoScrollEnabled;
   if (!opts.skipPersist) _safeSet('rp_auto_scroll', autoScrollEnabled ? '1' : '0');
 }
 function toggleAutoScroll() {
