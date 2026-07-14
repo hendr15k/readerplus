@@ -449,7 +449,7 @@ def cover_proxy():
     except Exception:
         return jsonify({'error': 'invalid url'}), 400
     try:
-        r = plain_requests.get(url, headers={'User-Agent': UA, 'Referer': AA_BASE}, timeout=20, stream=True)
+        r = plain_requests.get(url, headers={'User-Agent': UA, 'Referer': AA_BASE}, timeout=20, stream=True, allow_redirects=False)
     except Exception as e:
         return jsonify({'error': str(e)}), 502
     if r.status_code != 200:

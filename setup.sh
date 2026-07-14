@@ -20,7 +20,7 @@ fi
 mkdir -p "$install_root/html" "$install_root/piper-voices"
 
 # 2. App-Files
-cp -f readerplus.html "$install_root/html/"
+cp -f index.html "$install_root/html/readerplus.html"
 cp -f aa_proxy.py "$install_root/"
 cp -f piper-voices/*.onnx "$install_root/piper-voices/" 2>/dev/null || true
 cp -f piper-voices/*.onnx.json "$install_root/piper-voices/" 2>/dev/null || true
