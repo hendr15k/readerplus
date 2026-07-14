@@ -376,6 +376,17 @@ input, textarea{ font-family:inherit; outline:none; }
   display:inline-block; width:6px; height:6px; border-radius:50%;
   background:var(--text3); opacity:.6;
 }
+.reader-toolbar-theme{
+  font-size:.66rem; font-weight:700;
+  color:var(--text); padding:0 6px;
+  letter-spacing:.4px; text-transform:uppercase;
+  min-width:38px; text-align:center;
+}
+.reader-toolbar-theme-dot{
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  border:1px solid var(--border2); margin-right:4px; vertical-align:-1px;
+  transition:background .2s, border-color .2s;
+}
 .reader-text .sent{
   transition:background .25s, color .25s, padding .25s; border-radius:6px;
   padding:2px 4px;
@@ -1239,6 +1250,12 @@ input[type=range]::-moz-range-thumb{
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
             </button>
           </div>
+          <div class="reader-toolbar-group" role="group" aria-label="Theme">
+            <span class="reader-toolbar-label" aria-hidden="true">Theme</span>
+            <button class="reader-toolbar-btn" id="theme-cycle-btn" title="Lesethema wechseln (T)" aria-label="Lesethema wechseln">
+              <span id="theme-cycle-display"><span class="reader-toolbar-theme-dot" id="theme-cycle-dot"></span><span id="theme-cycle-name" class="reader-toolbar-theme">DUNKEL</span></span>
+            </button>
+          </div>
           <div class="reader-toolbar-group" role="group" aria-label="Auto-Scroll">
             <span class="reader-toolbar-label" aria-hidden="true">Auto</span>
             <button class="reader-toolbar-btn" id="auto-scroll-btn" title="Auto-Scroll an/aus (A)" aria-label="Auto-Scroll umschalten" aria-pressed="true">
@@ -1747,9 +1764,8 @@ async function init() {
 
   // Update char count
   updateCharCount();
-  initReaderPreferences();
 
-  // Restore theme
+  // Restore theme FIRST so the reader toolbar display matches persisted theme
   const savedTheme = localStorage.getItem('rp_theme') || '';
   if (savedTheme) {
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -1757,6 +1773,9 @@ async function init() {
   document.querySelectorAll('.theme-toggle-btn').forEach(b => {
     b.style.borderColor = (b.dataset.themeVal || '') === savedTheme ? 'var(--accent)' : 'var(--border2)';
   });
+
+  // Init reader toolbar states
+  initReaderPreferences();
 
   // Restore speed slider from localStorage and apply preset highlight
   const savedRate = localStorage.getItem('rp_rate');
@@ -2267,9 +2286,12 @@ function initReaderPreferences() {
   const dec = document.getElementById('font-dec');
   const inc = document.getElementById('font-inc');
   const asb = document.getElementById('auto-scroll-btn');
+  const tcb = document.getElementById('theme-cycle-btn');
   if (dec) dec.onclick = () => cycleReaderFontSize(-1);
   if (inc) inc.onclick = () => cycleReaderFontSize(+1);
   if (asb) asb.onclick = toggleAutoScroll;
+  if (tcb) tcb.onclick = cycleReaderTheme;
+  updateReaderThemeDisplay();
 }
 // v26: scroll the active sentence into view only when auto-scroll is enabled.
 function scrollActiveIntoView(idx) {
@@ -2999,6 +3021,14 @@ function setRate(val) {
 }
 
 // ---- Theme Toggle ----
+const THEME_CYCLE = [
+  { val: '',     name: 'Dunkel', color: '#1a1a24' },
+  { val: 'sepia', name: 'Sepia',  color: '#3a2c1d' },
+  { val: 'light', name: 'Hell',   color: '#f4f4f8' },
+];
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') || '';
+}
 function setTheme(theme) {
   if (theme) {
     document.documentElement.setAttribute('data-theme', theme);
@@ -3010,6 +3040,22 @@ function setTheme(theme) {
   document.querySelectorAll('.theme-toggle-btn').forEach(b => {
     b.style.borderColor = b.dataset.themeVal === theme ? 'var(--accent)' : 'var(--border2)';
   });
+  updateReaderThemeDisplay();
+}
+function updateReaderThemeDisplay() {
+  const nameEl = document.getElementById('theme-cycle-name');
+  const dotEl = document.getElementById('theme-cycle-dot');
+  if (!nameEl || !dotEl) return;
+  const cur = currentTheme();
+  const entry = THEME_CYCLE.find(t => t.val === cur) || THEME_CYCLE[0];
+  nameEl.textContent = entry.name;
+  dotEl.style.background = entry.color;
+}
+function cycleReaderTheme() {
+  const cur = currentTheme();
+  const i = THEME_CYCLE.findIndex(t => t.val === cur);
+  const next = THEME_CYCLE[(i < 0 ? 0 : (i + 1) % THEME_CYCLE.length)];
+  setTheme(next.val);
 }
 
 // ---- Keyboard Shortcuts ----
@@ -3039,6 +3085,7 @@ document.addEventListener('keydown', e => {
     case 'KeyB': addBookmark(); break;
     case 'KeyT': cycleTheme(); break;
     case 'KeyA': toggleAutoScroll(); break;
+    case 'KeyT': cycleReaderTheme(); break;
     case 'Equal': case 'NumpadAdd': cycleReaderFontSize(+1); break;
     case 'Minus': case 'NumpadSubtract': cycleReaderFontSize(-1); break;
     case 'KeyF': {
