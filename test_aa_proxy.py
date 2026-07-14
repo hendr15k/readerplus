@@ -155,5 +155,69 @@ class TestParseBook(unittest.TestCase):
         self.assertEqual(result['download_servers'][0]['url'], "http://example-download.com/file")
 
 
+from aa_proxy import app
+from unittest.mock import patch
+from requests.exceptions import RequestException
+
+class TestCoverProxy(unittest.TestCase):
+    def setUp(self):
+        app.config['TESTING'] = True
+        self.client = app.test_client()
+
+    def test_cover_proxy_invalid_scheme(self):
+        response = self.client.get('/api/cover?url=http://example.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json['error'], 'invalid url')
+
+    def test_cover_proxy_ssrf_guard(self):
+        response = self.client.get('/api/cover?url=https://127.0.0.1/image.jpg')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json['error'], 'host not allowed (SSRF guard)')
+
+        response = self.client.get('/api/cover?url=https://192.168.1.1/image.jpg')
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.get('/api/cover?url=https://10.0.0.5/image.jpg')
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.get('/api/cover?url=https://localhost/image.jpg')
+        self.assertEqual(response.status_code, 400)
+
+    def test_cover_proxy_malformed_url(self):
+        response = self.client.get('/api/cover?url=https://[')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json['error'], 'invalid url')
+
+    @patch('aa_proxy.plain_requests.get')
+    def test_cover_proxy_upstream_exception(self, mock_get):
+        mock_get.side_effect = RequestException("Connection timeout")
+        response = self.client.get('/api/cover?url=https://example.com/image.jpg')
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Connection timeout', response.json['error'])
+
+    @patch('aa_proxy.plain_requests.get')
+    def test_cover_proxy_upstream_not_200(self, mock_get):
+        mock_response = unittest.mock.Mock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+        response = self.client.get('/api/cover?url=https://example.com/image.jpg')
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json['error'], 'upstream 404')
+
+    @patch('aa_proxy.plain_requests.get')
+    def test_cover_proxy_success(self, mock_get):
+        mock_response = unittest.mock.Mock()
+        mock_response.status_code = 200
+        mock_response.content = b'fakeimage'
+        mock_response.headers = {'Content-Type': 'image/png'}
+        mock_get.return_value = mock_response
+
+        response = self.client.get('/api/cover?url=https://example.com/image.png')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b'fakeimage')
+        self.assertEqual(response.headers['Content-Type'], 'image/png')
+        self.assertEqual(response.headers['Cache-Control'], 'public, max-age=86400')
+
+
 if __name__ == '__main__':
     unittest.main()
