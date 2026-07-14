@@ -1,5 +1,6 @@
 import unittest
-from aa_proxy import parse_book
+from unittest.mock import patch
+from aa_proxy import parse_book, app
 
 class TestParseBook(unittest.TestCase):
     def setUp(self):
@@ -154,6 +155,81 @@ class TestParseBook(unittest.TestCase):
         self.assertEqual(result['download_servers'][0]['host'], "example-download.com")
         self.assertEqual(result['download_servers'][0]['url'], "http://example-download.com/file")
 
+
+class TestSearchAPI(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_search_missing_q(self):
+        response = self.client.get('/api/search')
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertIn('error', data)
+        self.assertEqual(data['error'], 'query parameter q required')
+
+        response_empty_q = self.client.get('/api/search?q=   ')
+        self.assertEqual(response_empty_q.status_code, 400)
+
+    @patch('aa_proxy.fetch_with_browser')
+    @patch('aa_proxy.cached')
+    @patch('aa_proxy.store')
+    def test_search_success(self, mock_store, mock_cached, mock_fetch):
+        mock_cached.return_value = None
+        mock_html = """
+        <div data-content="The Great Gatsby"></div>
+        <div data-content="F. Scott Fitzgerald"></div>
+        <div class="font-mono">>zlib/O/Fitzgerald/gatsby.epub<</div>
+        <a href="/md5/a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" class="line-clamp">The Great Gatsby</a>
+        """
+        mock_fetch.return_value = mock_html
+
+        response = self.client.get('/api/search?q=gatsby')
+        self.assertEqual(response.status_code, 200)
+
+        data = response.get_json()
+        self.assertEqual(data['query'], 'gatsby')
+        self.assertEqual(data['page'], 1)
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(len(data['results']), 1)
+
+        result = data['results'][0]
+        self.assertEqual(result['md5'], 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4')
+        self.assertEqual(result['title'], 'The Great Gatsby')
+        self.assertEqual(result['authors'], ['F. Scott Fitzgerald'])
+
+        mock_fetch.assert_called_once_with('https://annas-archive.gl/search?q=gatsby&page=1')
+        mock_cached.assert_called_once_with('search:gatsby:1')
+        mock_store.assert_called_once()
+
+    @patch('aa_proxy.fetch_with_browser')
+    @patch('aa_proxy.cached')
+    def test_search_cached(self, mock_cached, mock_fetch):
+        cached_response = {
+            'query': 'test', 'page': 1, 'count': 0, 'results': [], 'source_url': 'https://annas-archive.gl/search?q=test'
+        }
+        mock_cached.return_value = cached_response
+
+        response = self.client.get('/api/search?q=test')
+        self.assertEqual(response.status_code, 200)
+
+        data = response.get_json()
+        self.assertEqual(data, cached_response)
+
+        mock_cached.assert_called_once_with('search:test:1')
+        mock_fetch.assert_not_called()
+
+    @patch('aa_proxy.fetch_with_browser')
+    @patch('aa_proxy.cached')
+    def test_search_fetch_failed(self, mock_cached, mock_fetch):
+        mock_cached.return_value = None
+        mock_fetch.side_effect = Exception("Browser timeout")
+
+        response = self.client.get('/api/search?q=test')
+        self.assertEqual(response.status_code, 502)
+
+        data = response.get_json()
+        self.assertIn('error', data)
+        self.assertIn('fetch failed: Browser timeout', data['error'])
 
 if __name__ == '__main__':
     unittest.main()
