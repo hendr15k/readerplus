@@ -20,7 +20,8 @@ from flask_cors import CORS
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 app = Flask(__name__)
-CORS(app)
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:9999,http://127.0.0.1:9999").split(",")
+CORS(app, origins=allowed_origins)
 
 AA_BASE = "https://annas-archive.gl"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -456,7 +457,7 @@ def cover_proxy():
     if r.status_code != 200:
         return jsonify({'error': f'upstream {r.status_code}'}), 502
     return Response(r.content, content_type=r.headers.get('Content-Type', 'image/jpeg'),
-                    headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400'})
+                    headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.route('/api/voices')
@@ -511,7 +512,6 @@ def tts():
     resp.headers['X-Voice'] = voice_id
     resp.headers['X-Sample-Rate'] = str(voice.config.sample_rate)
     resp.headers['Cache-Control'] = 'public, max-age=86400'
-    resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
 
 
