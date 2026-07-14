@@ -89,12 +89,22 @@ def _is_private_host(hostname):
     """v14 SSRF guard: reject loopback / RFC1918 / link-local / cloud metadata.
     Returns True when the target is considered unsafe to fetch from the proxy."""
     import socket
+    import ipaddress
     try:
         infos = socket.getaddrinfo(hostname, None)
     except Exception:
         return True  # DNS fail → block
     for fam, *_rest, sockaddr in infos:
         ip = sockaddr[0]
+
+        # Unmap IPv4-mapped IPv6 addresses so they are checked as IPv4
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.version == 6 and ip_obj.ipv4_mapped:
+                ip = str(ip_obj.ipv4_mapped)
+        except Exception:
+            pass
+
         # IPv4
         if ip.count('.') == 3:
             try:
@@ -115,7 +125,7 @@ def _is_private_host(hostname):
         # IPv6 loopback & private
         elif ':' in ip:
             lo = ip.lower()
-            if lo == '::1' or lo.startswith('::ffff:127.') or lo.startswith('fe80:') \
+            if lo == '::1' or lo.startswith('fe80:') \
                     or lo.startswith('fc') or lo.startswith('fd') \
                     or ip.startswith('169.254'):  # IPv4-mapped IPv6 link-local
                 return True
