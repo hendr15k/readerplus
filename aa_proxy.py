@@ -247,6 +247,11 @@ def parse_search(html_text):
 
 # ---------- Book detail parsing ----------
 
+_FIELD_PAT = re.compile(r'<a[^>]+href="/search\?q=([^"&]+)"[^>]*>([^<]+)</a>')
+_SERVER_PAT = re.compile(
+    r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
+    re.IGNORECASE)
+
 def parse_book(html_text, md5):
     out = {
         'id': md5, 'slug': md5, 'md5': md5,
@@ -331,9 +336,8 @@ def parse_book(html_text, md5):
         if yrs: out['year'] = max(set(yrs), key=yrs.count)
 
     # Field links in /search?q= form
-    field_pat = re.compile(r'<a[^>]+href="/search\?q=([^"&]+)"[^>]*>([^<]+)</a>')
     seen = set()
-    for fm in field_pat.finditer(html_text):
+    for fm in _FIELD_PAT.finditer(html_text):
         from urllib.parse import unquote
         kw = unquote(fm.group(1)).strip()
         label = fm.group(2).strip()
@@ -382,11 +386,8 @@ def parse_book(html_text, md5):
         elif '(French)' in out['title']: out['language'] = 'French'
 
     # Download servers
-    server_pat = re.compile(
-        r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
-        re.IGNORECASE)
     servers = []
-    for sm in server_pat.finditer(html_text):
+    for sm in _SERVER_PAT.finditer(html_text):
         url = sm.group(1)
         host = re.search(r'https?://([^/]+)', url).group(1)
         if not any(s['host'] == host for s in servers):
