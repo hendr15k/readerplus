@@ -2698,6 +2698,20 @@ function skipSent(delta) {
   }
 }
 
+function jumpToSentence(idx) {
+  if (!sentences.length) return;
+  idx = Math.max(0, Math.min(sentences.length - 1, idx));
+  if (isPlaying) {
+    speakSentence(idx);
+  } else {
+    currentSentIdx = idx;
+    highlightSentence(idx);
+    updateProgress();
+    updateBookmarkActive();
+    saveReadingProgress();
+  }
+}
+
 // ---- Seek (Click on Progress Bar) ----
 function seekTo(event) {
   if (!sentences.length) return;
@@ -3087,7 +3101,6 @@ document.addEventListener('keydown', e => {
     case 'KeyB': addBookmark(); break;
     case 'KeyT': cycleTheme(); break;
     case 'KeyA': toggleAutoScroll(); break;
-    case 'KeyT': cycleReaderTheme(); break;
     case 'Equal': case 'NumpadAdd': cycleReaderFontSize(+1); break;
     case 'Minus': case 'NumpadSubtract': cycleReaderFontSize(-1); break;
     case 'KeyF': {
@@ -3138,7 +3151,7 @@ function hideTtsLoading() { document.getElementById('tts-loading').style.display
 init();
 
 // Scroll-to-top button visibility
-(function(){
+document.addEventListener('DOMContentLoaded', function(){
   const btn = document.getElementById('scroll-top-btn');
   const reader = document.getElementById('reader-view');
   const editor = document.getElementById('editor-view');
@@ -3160,7 +3173,7 @@ init();
     else window.scrollTo({top:0, behavior:'smooth'});
   });
   setTimeout(checkScroll, 600);
-})();
+});
 
 // v17: mobile touch-swipe on reader-view → skip forward/backward
 (function(){

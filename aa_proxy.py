@@ -20,7 +20,7 @@ from flask_cors import CORS
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 app = Flask(__name__)
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:9999,http://127.0.0.1:9999").split(",")
+allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:9999,http://127.0.0.1:9999").split(",") if o.strip()]
 CORS(app, origins=allowed_origins)
 
 AA_BASE = "https://annas-archive.gl"
@@ -221,7 +221,7 @@ def parse_search(html_text):
         year = None
         years_in_post = re.findall(r'(?:^|\D)(19\d{2}|20\d{2})(?:\D|$)', post)
         for y in years_in_post:
-            if y != '1984' and 1850 < int(y) < 2030:
+            if 1850 < int(y) < 2030:
                 year = y; break
         # Language
         language = None
@@ -325,8 +325,6 @@ def parse_book(html_text, md5):
                 out['title'] = clean.strip()
         # Also look at the directory name for author (e.g. "O\Orwell, George\orwell-1984.pdf")
         if not out['authors']:
-            dir_m = re.search(r'[\\/]([A-Z][^\\/]+[\\/](?:[^\\/]+[\\/])?[^\\/]+)\.(?:epub|mobi|pdf|azw3)', html_text)
-            # Look for path components that look like an author (e.g. "Orwell, George")
             author_in_path = re.findall(r'[\\/]([A-Z][a-zA-Z]+,\s+[A-Z][a-zA-Z]+)[\\/]', html_text)
             if author_in_path:
                 out['authors'] = [author_in_path[0]]
@@ -406,17 +404,22 @@ def search():
     q = request.args.get('q', '').strip()
     if not q: return jsonify({'error': 'query parameter q required'}), 400
     page = request.args.get('page', '1')
-    cache_key = f"search:{q}:{page}"
+    try:
+        page_num = int(page)
+        if page_num < 1: page_num = 1
+    except ValueError:
+        return jsonify({'error': 'page must be a positive integer'}), 400
+    cache_key = f"search:{q}:{page_num}"
     cv = cached(cache_key)
     if cv: return jsonify(cv)
     try:
-        url = f"{AA_BASE}/search?q={quote(q)}&page={page}"
+        url = f"{AA_BASE}/search?q={quote(q)}&page={page_num}"
         html = fetch_with_browser(url)
     except Exception as e:
         return jsonify({'error': f'fetch failed: {e}'}), 502
     results = parse_search(html)
     payload = {
-        'query': q, 'page': int(page), 'count': len(results),
+        'query': q, 'page': page_num, 'count': len(results),
         'results': results, 'source_url': f"{AA_BASE}/search?q={quote(q)}",
     }
     store(cache_key, payload)
@@ -472,7 +475,17 @@ def tts():
     data = request.get_json(silent=True) or {}
     text = data.get('text') or request.args.get('text', '').strip()
     voice_id = data.get('voice') or request.args.get('voice', 'de_DE-thorsten-medium')
-    length_scale = float(data.get('length_scale') or request.args.get('length_scale') or 1.0)
+    
+    length_scale_raw = data.get('length_scale')
+    if length_scale_raw is None:
+        length_scale_raw = request.args.get('length_scale')
+    if length_scale_raw is None:
+        length_scale_raw = 1.0
+    try:
+        length_scale = float(length_scale_raw)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'length_scale must be a number'}), 400
+    
     if not text:
         return jsonify({'error': 'text parameter required'}), 400
     if len(text) > TTS_MAX_CHARS:
@@ -528,7 +541,10 @@ def index():
 def readerplus_html():
     if os.path.isfile(FRONTEND_HTML):
         return send_file(FRONTEND_HTML, mimetype='text/html')
-    return send_file('/tmp/opencode/uploads/readerplus/index.html', mimetype='text/html')
+    local_index = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+    if os.path.isfile(local_index):
+        return send_file(local_index, mimetype='text/html')
+    return Response('<h1>ReaderPlus proxy running</h1><p>Frontend not found</p>', mimetype='text/html', status=404)
 
 
 @app.route('/api/health')
