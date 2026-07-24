@@ -1544,11 +1544,12 @@ function renderAaResults(data) {
       </div>`;
   });
   if (data.results.length >= 20) {
+    const prevDisabled = data.page <= 1;
     html += `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:.7rem;">
-      <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 10px"
+      <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 10px;${prevDisabled ? 'opacity:.4;cursor:not-allowed' : ''}"
         data-tip="Seite ${Math.max(1, data.page-1)}"
-        onclick="searchAnnaArchive(${data.page-1})"
-        ${data.page <= 1 ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''}>‹ Zurück</button>
+        onclick="searchAnnaArchive(${Math.max(1, data.page-1)})"
+        ${prevDisabled ? 'disabled' : ''}>‹ Zurück</button>
       <span style="color:var(--text3)">Seite ${data.page}</span>
       <button class="btn btn-ghost" style="font-size:.7rem;padding:4px 10px"
         data-tip="Seite ${data.page+1}"
@@ -3023,7 +3024,7 @@ function showToast(msg, type = '') {
 
 // ---- Helper ----
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ---- Speed Presets ----
@@ -3153,24 +3154,19 @@ init();
 // Scroll-to-top button visibility
 document.addEventListener('DOMContentLoaded', function(){
   const btn = document.getElementById('scroll-top-btn');
+  const contentArea = document.getElementById('content-area');
   const reader = document.getElementById('reader-view');
-  const editor = document.getElementById('editor-view');
-  if (!btn) return;
+  if (!btn || !contentArea) return;
   function checkScroll(){
-    const target = (!reader.classList.contains('hidden')) ? reader : editor;
-    if (!target) { btn.classList.remove('visible'); return; }
-    const has = target.scrollHeight > target.clientHeight + 200;
-    const scrolled = (target.scrollTop || window.scrollY) > 400;
+    const has = contentArea.scrollHeight > contentArea.clientHeight + 200;
+    const scrolled = contentArea.scrollTop > 400;
     if (has && scrolled) btn.classList.add('visible');
     else btn.classList.remove('visible');
   }
-  [reader, editor].forEach(el => el && el.addEventListener('scroll', checkScroll));
+  contentArea.addEventListener('scroll', checkScroll);
   window.addEventListener('resize', checkScroll);
-  window.addEventListener('scroll', checkScroll);
   btn.addEventListener('click', () => {
-    const target = (!reader.classList.contains('hidden')) ? reader : editor;
-    if (target) target.scrollTo({top:0, behavior:'smooth'});
-    else window.scrollTo({top:0, behavior:'smooth'});
+    contentArea.scrollTo({top:0, behavior:'smooth'});
   });
   setTimeout(checkScroll, 600);
 });

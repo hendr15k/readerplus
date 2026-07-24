@@ -12,9 +12,10 @@ import time
 import json
 import glob
 import wave
+import math
 import threading
 import requests as plain_requests
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -73,7 +74,7 @@ def list_available_voices():
     out = []
     for onnx_path in sorted(glob.glob(os.path.join(VOICES_DIR, '*.onnx'))):
         vid = os.path.splitext(os.path.basename(onnx_path))[0]
-        meta = VOICE_META.get(vid, {'name': vid, 'lang': 'unknown', 'gender': 'unknown', 'quality': 'unknown'})
+        meta = dict(VOICE_META.get(vid, {'name': vid, 'lang': 'unknown', 'gender': 'unknown', 'quality': 'unknown'}))
         meta['id'] = vid
         meta['size_mb'] = round(os.path.getsize(onnx_path) / 1024 / 1024, 1)
         out.append(meta)
@@ -307,8 +308,6 @@ def parse_book(html_text, md5):
                        html_text, re.IGNORECASE)
     if file_m:
         fname = file_m.group(1); ext = file_m.group(2).lower()
-        # URL-decode
-        from urllib.parse import unquote
         fname = unquote(fname)
         out['filename'] = fname + '.' + ext
         out['format'] = ext.upper()
@@ -339,7 +338,6 @@ def parse_book(html_text, md5):
     field_pat = re.compile(r'<a[^>]+href="/search\?q=([^"&]+)"[^>]*>([^<]+)</a>')
     seen = set()
     for fm in field_pat.finditer(html_text):
-        from urllib.parse import unquote
         kw = unquote(fm.group(1)).strip()
         label = fm.group(2).strip()
         if (kw, label) in seen: continue
@@ -428,6 +426,8 @@ def search():
 
 @app.route('/api/book/<book_id>')
 def book_detail(book_id):
+    if not re.match(r'^[a-f0-9]{32}$', book_id):
+        return jsonify({'error': 'invalid book id (expected 32-char hex md5)'}), 400
     cache_key = f"book:{book_id}"
     cv = cached(cache_key)
     if cv: return jsonify(cv)
@@ -461,7 +461,14 @@ def cover_proxy():
         return jsonify({'error': str(e)}), 502
     if r.status_code != 200:
         return jsonify({'error': f'upstream {r.status_code}'}), 502
-    return Response(r.content, content_type=r.headers.get('Content-Type', 'image/jpeg'),
+    MAX_COVER_BYTES = 10 * 1024 * 1024
+    content_length = r.headers.get('Content-Length')
+    if content_length and int(content_length) > MAX_COVER_BYTES:
+        return jsonify({'error': 'image too large'}), 413
+    body = r.raw.read(MAX_COVER_BYTES + 1)
+    if len(body) > MAX_COVER_BYTES:
+        return jsonify({'error': 'image too large'}), 413
+    return Response(body, content_type=r.headers.get('Content-Type', 'image/jpeg'),
                     headers={'Cache-Control': 'public, max-age=86400'})
 
 
@@ -485,6 +492,8 @@ def tts():
         length_scale = float(length_scale_raw)
     except (ValueError, TypeError):
         return jsonify({'error': 'length_scale must be a number'}), 400
+    if math.isnan(length_scale) or math.isinf(length_scale):
+        return jsonify({'error': 'length_scale must be a finite number'}), 400
     
     if not text:
         return jsonify({'error': 'text parameter required'}), 400
@@ -534,6 +543,9 @@ def tts():
 def index():
     if os.path.isfile(FRONTEND_HTML):
         return send_file(FRONTEND_HTML, mimetype='text/html')
+    local_index = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+    if os.path.isfile(local_index):
+        return send_file(local_index, mimetype='text/html')
     return Response('<h1>ReaderPlus proxy running</h1><p>See /api/health</p>', mimetype='text/html')
 
 
