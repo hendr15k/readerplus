@@ -13,9 +13,12 @@ import json
 import glob
 import wave
 import math
+import socket
+import ipaddress
 import threading
+import concurrent.futures
 import requests as plain_requests
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -31,6 +34,7 @@ WAIT_AFTER_LOAD = 3500
 
 CACHE = {}
 CACHE_TTL = 300
+_cache_lock = threading.Lock()
 
 SERVER_PAT = re.compile(
     r'href="(https?://(?!annas-archive\.gl)[^"]+)"[^>]*class="[^"]*(?:archive-download-pill|archive-download-primary|archive-download-inline)[^"]*"',
@@ -81,23 +85,23 @@ def list_available_voices():
     return out
 
 def cached(key):
-    e = CACHE.get(key)
-    if e and (time.time() - e['t']) < CACHE_TTL:
-        return e['v']
+    with _cache_lock:
+        e = CACHE.get(key)
+        if e and (time.time() - e['t']) < CACHE_TTL:
+            return e['v']
     return None
 
 def store(key, val):
-    CACHE[key] = {'t': time.time(), 'v': val}
-    if len(CACHE) > 200:
-        oldest = min(CACHE.items(), key=lambda x: x[1]['t'])[0]
-        CACHE.pop(oldest, None)
+    with _cache_lock:
+        CACHE[key] = {'t': time.time(), 'v': val}
+        if len(CACHE) > 200:
+            oldest = min(CACHE.items(), key=lambda x: x[1]['t'])[0]
+            CACHE.pop(oldest, None)
 
 
 def _is_private_host(hostname):
     """v14 SSRF guard: reject loopback / RFC1918 / link-local / cloud metadata.
     Returns True when the target is considered unsafe to fetch from the proxy."""
-    import socket
-    import ipaddress
     try:
         infos = socket.getaddrinfo(hostname, None)
     except Exception:
@@ -447,8 +451,6 @@ def cover_proxy():
     url = request.args.get('url', '')
     if not url.startswith('https://'):
         return jsonify({'error': 'invalid url'}), 400
-    # v14: SSRF guard — resolve hostname and reject private/loopback addresses.
-    from urllib.parse import urlparse
     try:
         host = (urlparse(url).hostname or '').lower()
         if not host or _is_private_host(host):
@@ -456,16 +458,20 @@ def cover_proxy():
     except Exception:
         return jsonify({'error': 'invalid url'}), 400
     try:
-        r = plain_requests.get(url, headers={'User-Agent': UA, 'Referer': AA_BASE}, timeout=20, stream=True, allow_redirects=False)
+        r = plain_requests.get(url, headers={'User-Agent': UA, 'Referer': AA_BASE}, timeout=20, stream=True, allow_redirects=True)
     except Exception as e:
         return jsonify({'error': str(e)}), 502
     if r.status_code != 200:
         return jsonify({'error': f'upstream {r.status_code}'}), 502
     MAX_COVER_BYTES = 10 * 1024 * 1024
     content_length = r.headers.get('Content-Length')
-    if content_length and int(content_length) > MAX_COVER_BYTES:
-        return jsonify({'error': 'image too large'}), 413
-    body = r.raw.read(MAX_COVER_BYTES + 1)
+    if content_length:
+        try:
+            if int(content_length) > MAX_COVER_BYTES:
+                return jsonify({'error': 'image too large'}), 413
+        except ValueError:
+            pass
+    body = r.raw.read(MAX_COVER_BYTES + 1, decode_content=True)
     if len(body) > MAX_COVER_BYTES:
         return jsonify({'error': 'image too large'}), 413
     return Response(body, content_type=r.headers.get('Content-Type', 'image/jpeg'),
@@ -520,8 +526,6 @@ def tts():
                 wf.writeframes(chunk.audio_int16_bytes)
         return buf.getvalue()
 
-    # Run in a worker thread so we don't block the single-threaded sync_playwright loop
-    import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         future = ex.submit(synth_in_thread)
         try:
